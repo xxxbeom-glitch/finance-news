@@ -15,27 +15,35 @@ export default function ManualInput({ onSummaryReady }: ManualInputProps) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(async (file: File) => {
-    setLoading(true);
-    setStatus(`처리 중: ${file.name}`);
     const form = new FormData();
     form.append('file', file);
     form.append('type', file.type === 'application/pdf' ? 'pdf' : 'image');
 
-    try {
-      const res = await fetch('/api/process-manual', { method: 'POST', body: form });
-      const data = await res.json();
-      if (data.summary) {
-        onSummaryReady(data.summary);
-        setStatus('완료');
-      } else {
-        setStatus('오류: ' + (data.error || 'unknown'));
-      }
-    } catch {
-      setStatus('요청 실패');
-    } finally {
-      setLoading(false);
+    const res = await fetch('/api/process-manual', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.summary) {
+      onSummaryReady(data.summary);
+    } else {
+      throw new Error(data.error || 'unknown');
     }
   }, [onSummaryReady]);
+
+  const processFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setLoading(true);
+    const errors: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setStatus(files.length > 1 ? `처리 중 (${i + 1}/${files.length}): ${file.name}` : `처리 중: ${file.name}`);
+      try {
+        await processFile(file);
+      } catch (e) {
+        errors.push(`${file.name}: ${e instanceof Error ? e.message : 'unknown'}`);
+      }
+    }
+    setLoading(false);
+    setStatus(errors.length === 0 ? '완료' : '오류: ' + errors.join(', '));
+  }, [processFile]);
 
   const processText = async () => {
     if (!text.trim()) return;
@@ -76,9 +84,9 @@ export default function ManualInput({ onSummaryReady }: ManualInputProps) {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
-  }, [processFile]);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) processFiles(files);
+  }, [processFiles]);
 
   return (
     <div
@@ -157,11 +165,15 @@ export default function ManualInput({ onSummaryReady }: ManualInputProps) {
             type="file"
             className="hidden"
             accept=".pdf,image/*"
-            onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])}
+            multiple
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length > 0) processFiles(files);
+            }}
           />
           <div className="text-3xl mb-2">📎</div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            PDF / 이미지를 드래그하거나 클릭하여 업로드
+            PDF / 이미지를 드래그하거나 클릭하여 업로드 (여러 파일 동시 선택 가능)
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
             또는 <kbd className="px-1 py-0.5 rounded text-xs" style={{ background: 'var(--border)' }}>Ctrl+V</kbd>로 스크린샷 붙여넣기
