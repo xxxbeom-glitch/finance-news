@@ -4,7 +4,7 @@ import { NewsItem } from '@/lib/rss-sources';
 import { saveBriefing } from '@/lib/kv';
 
 function getClient() {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return new Anthropic();
 }
 
 const SYSTEM_PROMPT = `당신은 전문 경제 뉴스 애널리스트입니다. 수집된 RSS 뉴스를 분석하여 투자자에게 유용한 일일 경제 브리핑을 작성합니다.

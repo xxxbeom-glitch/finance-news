@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
 export async function POST(req: NextRequest) {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = new Anthropic();
   try {
     const formData = await req.formData();
     const type = formData.get('type') as string; // 'pdf' | 'image' | 'text'
