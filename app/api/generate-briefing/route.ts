@@ -3,7 +3,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { NewsItem } from '@/lib/rss-sources';
 import { saveBriefing } from '@/lib/kv';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+function getClient() {
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
 
 const SYSTEM_PROMPT = `당신은 전문 경제 뉴스 애널리스트입니다. 수집된 RSS 뉴스를 분석하여 투자자에게 유용한 일일 경제 브리핑을 작성합니다.
 
@@ -76,6 +78,7 @@ ${manualContent ? `## 추가 자료 (PDF/이미지/텍스트 업로드)\n${manua
 
 위 뉴스를 분석하여 일일 경제 브리핑을 작성해주세요. 수치 데이터가 없으면 "시장 마감 데이터 미수집"으로 표기하세요.`;
 
+    const client = getClient();
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
