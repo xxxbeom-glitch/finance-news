@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #080808;
-  --surface: #101010;
-  --surface2: #181818;
-  --border: #222222;
+  --bg: #111111;
+  --surface: #1a1a1a;
+  --surface2: #222222;
+  --border: #2e2e2e;
   --accent: #00d4aa;
   --accent2: #3b82f6;
   --text: #e2e8f0;
@@ -17,7 +17,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'SUIT', sans-serif;
+  font-family: 'SUIT', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }

@@ -11,7 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <head>
         <link
-          href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/static/woff2/SUIT.css"
+          href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT@latest/fonts/static/woff2/SUIT.css"
           rel="stylesheet"
         />
       </head>
