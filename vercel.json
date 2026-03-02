@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/generate-briefing/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/process-manual/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/fetch-rss/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}
