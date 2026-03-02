@@ -38,23 +38,30 @@ const SYSTEM_PROMPT = `당신은 전문 경제 뉴스 애널리스트입니다. 
 - 📉 S&P500 하락 TOP3: {종목1}, {종목2}, {종목3}
 
 🤖 빅테크/AI/반도체
-**{헤드라인}**
-{10~12줄 요약: 어떤 이슈인지, 왜 중요한지, 주가/시장 반응, 향후 영향}
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
 
 🛢 원자재/환율
-**{헤드라인}**
-{10~12줄 요약: 유가/금 동향, 달러/원 환율, 원인 분석, 시장 영향}
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
 
 🌍 국제정세
-**{헤드라인}**
-{10~12줄 요약: 상황 배경, 경제적 영향, 관련 국가/기업 영향}
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
 
 🇰🇷 국내 경제
-**{헤드라인}**
-{10~12줄 요약}
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
+- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
 
 ---
-*수집된 뉴스 기반 AI 요약 | Claude AI 생성*`;
+*수집된 뉴스 기반 AI 요약 | Claude AI 생성*
+
+## bullet 작성 규칙
+- 각 bullet은 1~2문장, 핵심 수치·기업명·시장 반응 포함
+- 문장 끝에 반드시 [🔗](기사URL) 형식으로 해당 기사의 실제 URL 첨부
+- 섹터별 관련 기사가 없으면 해당 섹션 생략
+- URL은 반드시 뉴스 목록에 제공된 실제 URL만 사용 (임의 생성 금지)`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,7 +73,7 @@ export async function POST(req: NextRequest) {
     };
 
     const newsText = newsItems
-      .map((item, i) => `[${i + 1}] [${item.source}] ${item.title}\n${item.description}`)
+      .map((item, i) => `[${i + 1}] [${item.source}] ${item.title}\nURL: ${item.link}\n${item.description}`)
       .join('\n\n');
 
     const userMessage = `오늘 날짜: ${date}
