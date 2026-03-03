@@ -10,6 +10,21 @@ const UPLOAD_CONCURRENCY = 5;
 const SESSION_KEY_FILES = 'manualInput_files';
 const SESSION_KEY_SUMMARY = 'manualInput_summary';
 
+declare global {
+  interface Window {
+    Dropbox?: {
+      choose: (options: {
+        success: (files: Array<{ name: string; link: string; bytes: number; id: string }>) => void;
+        cancel?: () => void;
+        linkType?: 'preview' | 'direct';
+        multiselect?: boolean;
+        extensions?: string[];
+      }) => void;
+      isBrowserSupported?: () => boolean;
+    };
+  }
+}
+
 interface AttachedFile {
   id: string;
   name: string;
@@ -28,8 +43,25 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [clipboardCount, setClipboardCount] = useState(0);
+  const [dropboxReady, setDropboxReady] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const accumulatedSummary = useRef<string[]>([]);
+
+  // Poll for Dropbox SDK readiness (lazyOnload fires after hydration)
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_DROPBOX_APP_KEY) return;
+    if (typeof window !== 'undefined' && window.Dropbox) {
+      setDropboxReady(true);
+      return;
+    }
+    const id = setInterval(() => {
+      if (typeof window !== 'undefined' && window.Dropbox) {
+        setDropboxReady(true);
+        clearInterval(id);
+      }
+    }, 300);
+    return () => clearInterval(id);
+  }, []);
 
   // Restore state from sessionStorage on mount
   useEffect(() => {
@@ -170,6 +202,80 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
     },
     [addSummary]
   );
+
+  const processDropboxFiles = useCallback(
+    async (files: Array<{ name: string; link: string; bytes: number }>) => {
+      if (files.length === 0) return;
+
+      const newEntries: AttachedFile[] = files.map((f) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: f.name,
+        size: f.bytes,
+        status: 'queued' as AttachedFile['status'],
+      }));
+
+      setAttachedFiles((prev) => [...prev, ...newEntries]);
+
+      const processOne = async (file: { name: string; link: string; bytes: number }, entry: AttachedFile) => {
+        setAttachedFiles((prev) =>
+          prev.map((f) => (f.id === entry.id ? { ...f, status: 'processing' } : f))
+        );
+        try {
+          const form = new FormData();
+          form.append('type', 'url');
+          form.append('url', file.link);
+          form.append('name', file.name);
+
+          const res = await fetch('/api/process-manual', { method: 'POST', body: form });
+          const data = await res.json();
+
+          if (data.summary) {
+            addSummary(data.summary);
+            setAttachedFiles((prev) =>
+              prev.map((f) => (f.id === entry.id ? { ...f, status: 'done' } : f))
+            );
+          } else {
+            setAttachedFiles((prev) =>
+              prev.map((f) =>
+                f.id === entry.id
+                  ? { ...f, status: 'error', error: data.error || '처리 실패' }
+                  : f
+              )
+            );
+          }
+        } catch (e) {
+          setAttachedFiles((prev) =>
+            prev.map((f) =>
+              f.id === entry.id
+                ? { ...f, status: 'error', error: e instanceof Error ? e.message : '오류' }
+                : f
+            )
+          );
+        }
+      };
+
+      const pairs = files.map((file, i) => ({ file, entry: newEntries[i] }));
+      for (let i = 0; i < pairs.length; i += UPLOAD_CONCURRENCY) {
+        await Promise.allSettled(
+          pairs.slice(i, i + UPLOAD_CONCURRENCY).map(({ file, entry }) => processOne(file, entry))
+        );
+      }
+    },
+    [addSummary]
+  );
+
+  const handleDropboxChoose = useCallback(() => {
+    if (typeof window === 'undefined' || !window.Dropbox) return;
+    window.Dropbox.choose({
+      success: (files) => {
+        processDropboxFiles(files.map((f) => ({ name: f.name, link: f.link, bytes: f.bytes })));
+      },
+      cancel: () => {},
+      linkType: 'direct',
+      multiselect: true,
+      extensions: ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'],
+    });
+  }, [processDropboxFiles]);
 
   const processText = useCallback(async () => {
     if (!text.trim()) return;
@@ -385,6 +491,20 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
               </svg>
               파일 첨부
             </button>
+            {/* Dropbox Chooser button */}
+            {dropboxReady && (
+              <button
+                onClick={handleDropboxChoose}
+                className="flex items-center gap-1.5 text-xs opacity-60 hover:opacity-100 transition-opacity"
+                style={{ color: 'var(--text-muted)' }}
+                title="Dropbox에서 파일 선택"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 2L0 6l6 4-6 4 6 4 6-4-6-4 6-4L6 2zm12 0l-6 4 6 4-6 4 6 4 6-4-6-4 6-4-6-4zM6 17.5L0 13.5l6 4 6-4-6 4zm12 0l-6-4 6 4 6-4-6 4z" />
+                </svg>
+                Dropbox
+              </button>
+            )}
             <span className="text-xs opacity-30" style={{ color: 'var(--text-muted)' }}>
               파일당 최대 3MB · 최대 30개
             </span>

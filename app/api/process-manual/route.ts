@@ -12,6 +12,74 @@ export async function POST(req: NextRequest) {
 
     if (type === 'text' && text) {
       extractedTexts = [text];
+    } else if (type === 'url') {
+      // Dropbox Chooser (or other) direct download links
+      const urlEntries: Array<{ url: string; name: string }> = [];
+      const singleUrl = formData.get('url') as string | null;
+      if (singleUrl) {
+        const name = (formData.get('name') as string | null) ?? 'file';
+        urlEntries.push({ url: singleUrl, name });
+      } else {
+        let i = 0;
+        while (true) {
+          const u = formData.get(`url_${i}`) as string | null;
+          if (!u) break;
+          const n = (formData.get(`name_${i}`) as string | null) ?? `file_${i}`;
+          urlEntries.push({ url: u, name: n });
+          i++;
+        }
+      }
+
+      if (urlEntries.length === 0) {
+        return NextResponse.json({ error: 'No URLs provided' }, { status: 400 });
+      }
+
+      const extractions = await Promise.allSettled(
+        urlEntries.map(async ({ url, name }) => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`파일 다운로드 실패: ${response.status}`);
+          const contentType = response.headers.get('content-type') ?? '';
+          const isPdf =
+            contentType.includes('pdf') || name.toLowerCase().endsWith('.pdf');
+          const bytes = await response.arrayBuffer();
+          const base64 = Buffer.from(bytes).toString('base64');
+          const mediaType = isPdf
+            ? 'application/pdf'
+            : contentType.startsWith('image/')
+            ? (contentType.split(';')[0] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp')
+            : 'image/jpeg';
+
+          const msg = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: isPdf ? 'document' : 'image',
+                    source: { type: 'base64', media_type: mediaType, data: base64 },
+                  } as Anthropic.DocumentBlockParam | Anthropic.ImageBlockParam,
+                  {
+                    type: 'text',
+                    text: '이 문서/이미지의 경제/금융/투자 관련 핵심 내용을 10~12줄로 요약해주세요. 수치, 기업명, 날짜, 시장 영향을 포함하세요.',
+                  },
+                ],
+              },
+            ],
+          });
+          return msg.content[0].type === 'text' ? msg.content[0].text : '';
+        })
+      );
+
+      extractedTexts = extractions
+        .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+        .map((r) => r.value)
+        .filter(Boolean);
+
+      if (extractedTexts.length === 0) {
+        return NextResponse.json({ error: 'URL 파일 처리 실패' }, { status: 500 });
+      }
     } else if (type === 'pdf' || type === 'image') {
       // Collect all files: single 'file' field OR multiple 'file_0', 'file_1', ... fields
       const files: File[] = [];

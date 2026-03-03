@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -15,7 +16,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="h-dvh overflow-hidden antialiased">{children}</body>
+      <body className="h-dvh overflow-hidden antialiased">
+        {children}
+        {process.env.NEXT_PUBLIC_DROPBOX_APP_KEY && (
+          <Script
+            src="https://www.dropbox.com/static/api/2/dropins.js"
+            id="dropboxjs"
+            data-app-key={process.env.NEXT_PUBLIC_DROPBOX_APP_KEY}
+            strategy="lazyOnload"
+          />
+        )}
+      </body>
     </html>
   );
 }
