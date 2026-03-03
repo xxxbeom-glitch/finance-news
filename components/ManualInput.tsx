@@ -70,7 +70,7 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name: f.name || `이미지_${Date.now()}`,
         size: f.size,
-        status: (i === 0 ? 'processing' : 'queued') as const,
+        status: (i === 0 ? 'processing' : 'queued') as AttachedFile['status'],
       }));
 
       setAttachedFiles((prev) => [...prev, ...newEntries]);
