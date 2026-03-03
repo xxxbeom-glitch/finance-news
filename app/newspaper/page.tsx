@@ -41,6 +41,7 @@ function formatSize(bytes: number) {
 
 export default function NewspaperPage() {
   const [files, setFiles] = useState<PdfFile[]>([]);
+  const fileObjectsRef = useRef<Map<string, File>>(new Map());
   const [dropboxReady, setDropboxReady] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -190,6 +191,7 @@ export default function NewspaperPage() {
       setFiles((prev) => [...prev, ...newEntries]);
 
       const pairs = pdfs.map((f, i) => ({ file: f, entry: newEntries[i] }));
+      pairs.forEach(({ file, entry }) => fileObjectsRef.current.set(entry.id, file));
       for (let i = 0; i < pairs.length; i += UPLOAD_CONCURRENCY) {
         await Promise.allSettled(
           pairs.slice(i, i + UPLOAD_CONCURRENCY).map(({ file, entry }) =>
@@ -204,18 +206,25 @@ export default function NewspaperPage() {
   const retryFile = useCallback(
     async (fileId: string) => {
       const f = files.find((x) => x.id === fileId);
-      if (!f || !f.dropboxUrl) return;
+      if (!f) return;
       updateFile(fileId, { status: 'queued', error: undefined });
-      await processOneUrl(f, f.dropboxUrl);
+      if (f.dropboxUrl) {
+        await processOneUrl(f, f.dropboxUrl);
+      } else {
+        const localFile = fileObjectsRef.current.get(fileId);
+        if (localFile) await processOneFile(f, localFile);
+      }
     },
-    [files, processOneUrl, updateFile]
+    [files, processOneUrl, processOneFile, updateFile]
   );
 
   const removeFile = useCallback((id: string) => {
+    fileObjectsRef.current.delete(id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   const clearAll = useCallback(() => {
+    fileObjectsRef.current.clear();
     setFiles([]);
     setResult('');
     setGenError('');
@@ -397,8 +406,8 @@ export default function NewspaperPage() {
                       <span className="shrink-0 opacity-50" style={{ color: 'var(--text-muted)' }}>
                         {formatSize(f.size)}
                       </span>
-                      {/* Retry button (only for Dropbox error files) */}
-                      {f.status === 'error' && f.dropboxUrl && (
+                      {/* Retry button */}
+                      {f.status === 'error' && (f.dropboxUrl || fileObjectsRef.current.has(f.id)) && (
                         <button
                           onClick={() => retryFile(f.id)}
                           className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
