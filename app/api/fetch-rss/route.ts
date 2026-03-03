@@ -2,6 +2,21 @@ import { NextResponse } from 'next/server';
 import { RSS_SOURCES, NewsItem } from '@/lib/rss-sources';
 import { parseStringPromise } from 'xml2js';
 
+/** Returns true if the pubDate string is within the last 24 hours (KST-aware). */
+function isWithin24HoursKST(pubDateStr: string): boolean {
+  if (!pubDateStr) return true; // include if no date available
+  try {
+    const pubDate = new Date(pubDateStr);
+    if (isNaN(pubDate.getTime())) return true; // include if unparseable
+    // KST = UTC+9; we compare absolute timestamps so no conversion needed
+    const nowMs = Date.now();
+    const diff = nowMs - pubDate.getTime();
+    return diff >= 0 && diff <= 24 * 60 * 60 * 1000;
+  } catch {
+    return true;
+  }
+}
+
 async function fetchFeed(source: (typeof RSS_SOURCES)[0]): Promise<NewsItem[]> {
   try {
     const res = await fetch(source.url, {
@@ -19,22 +34,26 @@ async function fetchFeed(source: (typeof RSS_SOURCES)[0]): Promise<NewsItem[]> {
     const rawItems = channel.item || channel.entry || [];
     const itemsArray = Array.isArray(rawItems) ? rawItems : [rawItems];
 
-    return itemsArray.slice(0, 15).map((item: Record<string, unknown>) => {
-      const title = extractText(item.title) || '';
-      const link = extractLink(item.link || item.guid) || '';
-      const pubDate = extractText(item.pubDate || item.updated || item.published) || '';
-      const description = extractText(item.description || item.summary || item['content:encoded']) || '';
+    return itemsArray
+      .slice(0, 30)
+      .map((item: Record<string, unknown>) => {
+        const title = extractText(item.title) || '';
+        const link = extractLink(item.link || item.guid) || '';
+        const pubDate = extractText(item.pubDate || item.updated || item.published) || '';
+        const description =
+          extractText(item.description || item.summary || item['content:encoded']) || '';
 
-      return {
-        title: title.trim(),
-        link,
-        pubDate,
-        description: description.replace(/<[^>]*>/g, '').slice(0, 300).trim(),
-        source: source.name,
-        lang: source.lang,
-        category: source.category,
-      } as NewsItem;
-    }).filter((item) => item.title.length > 0);
+        return {
+          title: title.trim(),
+          link,
+          pubDate,
+          description: description.replace(/<[^>]*>/g, '').slice(0, 300).trim(),
+          source: source.name,
+          lang: source.lang,
+          category: source.category,
+        } as NewsItem;
+      })
+      .filter((item) => item.title.length > 0 && isWithin24HoursKST(item.pubDate));
   } catch {
     return [];
   }
