@@ -36,18 +36,7 @@ export async function POST(req: NextRequest) {
 
       const extractions = await Promise.allSettled(
         urlEntries.map(async ({ url, name }) => {
-          const response = await fetch(url);
-          if (!response.ok) throw new Error(`파일 다운로드 실패: ${response.status}`);
-          const contentType = response.headers.get('content-type') ?? '';
-          const isPdf =
-            contentType.includes('pdf') || name.toLowerCase().endsWith('.pdf');
-          const bytes = await response.arrayBuffer();
-          const base64 = Buffer.from(bytes).toString('base64');
-          const mediaType = isPdf
-            ? 'application/pdf'
-            : contentType.startsWith('image/')
-            ? (contentType.split(';')[0] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp')
-            : 'image/jpeg';
+          const isPdf = name.toLowerCase().endsWith('.pdf');
 
           const msg = await client.messages.create({
             model: 'claude-haiku-4-5-20251001',
@@ -58,7 +47,7 @@ export async function POST(req: NextRequest) {
                 content: [
                   {
                     type: isPdf ? 'document' : 'image',
-                    source: { type: 'base64', media_type: mediaType, data: base64 },
+                    source: { type: 'url', url },
                   } as Anthropic.DocumentBlockParam | Anthropic.ImageBlockParam,
                   {
                     type: 'text',
