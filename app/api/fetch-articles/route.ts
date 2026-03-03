@@ -115,9 +115,22 @@ async function fetchArticle(url: string, cookie?: string): Promise<{
   }
 }
 
+// Cookie-Editor JSON 형식 또는 일반 문자열 둘 다 처리
+function normalizeCookie(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[')) return trimmed; // 이미 일반 형식
+  try {
+    const arr = JSON.parse(trimmed) as { name: string; value: string }[];
+    return arr.map((c) => `${c.name}=${c.value}`).join('; ');
+  } catch {
+    return trimmed;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { urls, cookie } = (await req.json()) as { urls: string[]; cookie?: string };
+    const { urls, cookie: rawCookie } = (await req.json()) as { urls: string[]; cookie?: string };
+    const cookie = rawCookie ? normalizeCookie(rawCookie) : undefined;
 
     if (!urls?.length) {
       return NextResponse.json({ error: 'URL이 없습니다' }, { status: 400 });
