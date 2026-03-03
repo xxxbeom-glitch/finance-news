@@ -67,13 +67,34 @@ async function fetchMovers(scrId: string): Promise<MoverData[]> {
 }
 
 export async function GET() {
-  const [sp500, nasdaq, dow, gainers, losers] = await Promise.all([
-    fetchIndex('^GSPC'),
-    fetchIndex('^IXIC'),
-    fetchIndex('^DJI'),
-    fetchMovers('day_gainers'),
-    fetchMovers('day_losers'),
-  ]);
+  const [sp500, nasdaq, dow, gold, silver, copper, dollarIndex, kospi, kosdaq, usdkrw, gainers, losers] =
+    await Promise.all([
+      fetchIndex('^GSPC'),
+      fetchIndex('^IXIC'),
+      fetchIndex('^DJI'),
+      fetchIndex('GC=F'),
+      fetchIndex('SI=F'),
+      fetchIndex('HG=F'),
+      fetchIndex('DX-Y.NYB'),
+      fetchIndex('^KS11'),
+      fetchIndex('^KQ11'),
+      fetchIndex('KRW=X'),
+      fetchMovers('day_gainers'),
+      fetchMovers('day_losers'),
+    ]);
 
-  return NextResponse.json({ sp500, nasdaq, dow, gainers, losers });
+  return NextResponse.json({
+    sp500,
+    nasdaq,
+    dow,
+    gold,
+    silver,
+    copper,
+    dollarIndex,
+    kospi,
+    kosdaq,
+    usdkrw,
+    gainers,
+    losers,
+  });
 }

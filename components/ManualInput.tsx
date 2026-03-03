@@ -2,94 +2,182 @@
 
 import { useState, useCallback, useRef } from 'react';
 
-interface ManualInputProps {
-  onSummaryReady: (summary: string) => void;
+const MAX_FILE_SIZE_MB = 3;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const MAX_FILES_PER_BATCH = 30;
+const MAX_CLIPBOARD_IMAGES = 10;
+
+interface AttachedFile {
+  id: string;
+  name: string;
+  size: number;
+  status: 'processing' | 'done' | 'error';
+  error?: string;
 }
 
-export default function ManualInput({ onSummaryReady }: ManualInputProps) {
-  const [tab, setTab] = useState<'text' | 'file'>('text');
+interface ManualInputProps {
+  onSummaryReady: (summary: string) => void;
+  onSummaryClear: () => void;
+}
+
+export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualInputProps) {
   const [text, setText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [clipboardCount, setClipboardCount] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const accumulatedSummary = useRef<string[]>([]);
 
-  /** Send all files as a single batch request and return combined summary */
-  const processFiles = useCallback(
-    async (files: File[]) => {
-      if (files.length === 0) return;
-      setLoading(true);
-      setStatus(
-        files.length > 1
-          ? `${files.length}개 파일 처리 중...`
-          : `처리 중: ${files[0].name}`
-      );
-
-      try {
-        const form = new FormData();
-        const isPdf = files[0].type === 'application/pdf';
-        form.append('type', isPdf ? 'pdf' : 'image');
-
-        if (files.length === 1) {
-          form.append('file', files[0]);
-        } else {
-          files.forEach((file, i) => form.append(`file_${i}`, file));
-        }
-
-        const res = await fetch('/api/process-manual', { method: 'POST', body: form });
-        const data = await res.json();
-        if (data.summary) {
-          onSummaryReady(data.summary);
-          setStatus('완료');
-        } else {
-          setStatus('오류: ' + (data.error || 'unknown'));
-        }
-      } catch (e) {
-        setStatus('오류: ' + (e instanceof Error ? e.message : 'unknown'));
-      } finally {
-        setLoading(false);
-      }
+  const addSummary = useCallback(
+    (summary: string) => {
+      accumulatedSummary.current.push(summary);
+      onSummaryReady(accumulatedSummary.current.join('\n\n---\n\n'));
     },
     [onSummaryReady]
   );
 
-  const processText = async () => {
+  const removeFile = useCallback(
+    (id: string) => {
+      setAttachedFiles((prev) => {
+        const next = prev.filter((f) => f.id !== id);
+        if (next.length === 0 && text.trim() === '') {
+          accumulatedSummary.current = [];
+          onSummaryClear();
+        }
+        return next;
+      });
+    },
+    [text, onSummaryClear]
+  );
+
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+
+      // Validate sizes
+      const oversized = files.filter((f) => f.size > MAX_FILE_SIZE_BYTES);
+      if (oversized.length > 0) {
+        alert(`파일 크기 초과: ${oversized.map((f) => f.name).join(', ')}\n최대 ${MAX_FILE_SIZE_MB}MB까지 허용됩니다.`);
+        return;
+      }
+
+      if (files.length > MAX_FILES_PER_BATCH) {
+        alert(`한 번에 최대 ${MAX_FILES_PER_BATCH}개까지 첨부 가능합니다.`);
+        return;
+      }
+
+      const newEntries: AttachedFile[] = files.map((f) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: f.name || `이미지_${Date.now()}`,
+        size: f.size,
+        status: 'processing' as const,
+      }));
+
+      setAttachedFiles((prev) => [...prev, ...newEntries]);
+
+      // Process each file individually for granular status
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const entry = newEntries[i];
+
+        try {
+          const form = new FormData();
+          form.append('type', file.type === 'application/pdf' ? 'pdf' : 'image');
+          form.append('file', file);
+
+          const res = await fetch('/api/process-manual', { method: 'POST', body: form });
+          const data = await res.json();
+
+          if (data.summary) {
+            addSummary(data.summary);
+            setAttachedFiles((prev) =>
+              prev.map((f) => (f.id === entry.id ? { ...f, status: 'done' } : f))
+            );
+          } else {
+            setAttachedFiles((prev) =>
+              prev.map((f) =>
+                f.id === entry.id
+                  ? { ...f, status: 'error', error: data.error || '처리 실패' }
+                  : f
+              )
+            );
+          }
+        } catch (e) {
+          setAttachedFiles((prev) =>
+            prev.map((f) =>
+              f.id === entry.id
+                ? { ...f, status: 'error', error: e instanceof Error ? e.message : '오류' }
+                : f
+            )
+          );
+        }
+      }
+    },
+    [addSummary]
+  );
+
+  const processText = useCallback(async () => {
     if (!text.trim()) return;
-    setLoading(true);
-    setStatus('텍스트 요약 중...');
     const form = new FormData();
     form.append('type', 'text');
     form.append('text', text);
+
+    const textEntry: AttachedFile = {
+      id: `text-${Date.now()}`,
+      name: '텍스트 입력',
+      size: new Blob([text]).size,
+      status: 'processing',
+    };
+    setAttachedFiles((prev) => [...prev, textEntry]);
+    setText('');
 
     try {
       const res = await fetch('/api/process-manual', { method: 'POST', body: form });
       const data = await res.json();
       if (data.summary) {
-        onSummaryReady(data.summary);
-        setStatus('완료');
-        setText('');
+        addSummary(data.summary);
+        setAttachedFiles((prev) =>
+          prev.map((f) => (f.id === textEntry.id ? { ...f, status: 'done' } : f))
+        );
       } else {
-        setStatus('오류: ' + (data.error || 'unknown'));
+        setAttachedFiles((prev) =>
+          prev.map((f) =>
+            f.id === textEntry.id
+              ? { ...f, status: 'error', error: data.error || '처리 실패' }
+              : f
+          )
+        );
       }
     } catch {
-      setStatus('요청 실패');
-    } finally {
-      setLoading(false);
+      setAttachedFiles((prev) =>
+        prev.map((f) =>
+          f.id === textEntry.id ? { ...f, status: 'error', error: '요청 실패' } : f
+        )
+      );
     }
-  };
+  }, [text, addSummary]);
 
-  // Ctrl+V image paste
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
       const items = Array.from(e.clipboardData.items);
-      const imageItem = items.find((item) => item.type.startsWith('image/'));
-      if (imageItem) {
+      const imageItems = items.filter((item) => item.type.startsWith('image/'));
+
+      if (imageItems.length > 0) {
         e.preventDefault();
-        const file = imageItem.getAsFile();
-        if (file) await processFiles([file]);
+        if (clipboardCount >= MAX_CLIPBOARD_IMAGES) {
+          alert(`클립보드 이미지는 최대 ${MAX_CLIPBOARD_IMAGES}개까지 붙여넣기 가능합니다.`);
+          return;
+        }
+        const files = imageItems
+          .slice(0, MAX_CLIPBOARD_IMAGES - clipboardCount)
+          .map((item) => item.getAsFile())
+          .filter(Boolean) as File[];
+
+        setClipboardCount((c) => c + files.length);
+        await processFiles(files);
       }
     },
-    [processFiles]
+    [clipboardCount, processFiles]
   );
 
   const handleDrop = useCallback(
@@ -102,123 +190,147 @@ export default function ManualInput({ onSummaryReady }: ManualInputProps) {
     [processFiles]
   );
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        processText();
+      }
+    },
+    [processText]
+  );
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  };
+
   return (
-    <div
-      className="rounded-lg border p-4"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
-      onPaste={handlePaste}
-    >
-      {/* Section title */}
-      <div className="flex items-center gap-2 mb-4">
-        <span style={{ color: 'var(--accent)' }}>📄</span>
-        <span className="text-xs font-bold tracking-wider uppercase" style={{ color: 'var(--text-muted)' }}>
-          수동 자료 입력
-        </span>
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          (한경 신문 / 증권사 리포트)
-        </span>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-3">
-        {(['text', 'file'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="px-3 py-1 text-xs rounded transition-all"
-            style={{
-              background: tab === t ? 'var(--accent)' : 'var(--surface2)',
-              color: tab === t ? '#000' : 'var(--text-muted)',
-              fontWeight: tab === t ? '700' : '400',
-            }}
-          >
-            {t === 'text' ? '텍스트 붙여넣기' : 'PDF / 이미지'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'text' ? (
-        <div className="space-y-2">
-          <textarea
-            className="w-full rounded p-3 text-xs resize-none outline-none transition-colors"
-            style={{
-              background: 'var(--surface2)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-              minHeight: '120px',
-            }}
-            placeholder="뉴스 기사, 리포트 내용을 붙여넣으세요..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-          />
-          <button
-            onClick={processText}
-            disabled={loading || !text.trim()}
-            className="px-4 py-2 rounded text-xs font-bold tracking-wider transition-all disabled:opacity-40"
-            style={{ background: 'var(--accent)', color: '#000' }}
-          >
-            {loading ? '처리 중...' : 'AI 요약'}
-          </button>
+    <div className="flex-1 flex flex-col gap-2">
+      {/* File list */}
+      {attachedFiles.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachedFiles.map((f) => (
+            <div
+              key={f.id}
+              className="flex items-center gap-2 px-3 py-1.5 rounded text-xs"
+              style={{
+                background: 'var(--surface2)',
+                border: `1px solid ${
+                  f.status === 'done'
+                    ? 'var(--green)'
+                    : f.status === 'error'
+                    ? 'var(--red)'
+                    : 'var(--border)'
+                }`,
+              }}
+            >
+              <span
+                style={{
+                  color:
+                    f.status === 'done'
+                      ? 'var(--green)'
+                      : f.status === 'error'
+                      ? 'var(--red)'
+                      : 'var(--accent)',
+                }}
+              >
+                {f.status === 'processing' ? '처리중' : f.status === 'done' ? '완료' : '실패'}
+              </span>
+              <span style={{ color: 'var(--text-muted)' }} className="max-w-[120px] truncate">
+                {f.name}
+              </span>
+              <span style={{ color: 'var(--text-muted)', opacity: 0.6 }}>{formatSize(f.size)}</span>
+              {f.status !== 'processing' && (
+                <button
+                  onClick={() => removeFile(f.id)}
+                  className="opacity-50 hover:opacity-100 ml-1"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
         </div>
-      ) : (
+      )}
+
+      {/* Input area */}
+      <div
+        className="relative rounded-lg border transition-colors"
+        style={{
+          borderColor: isDragOver ? 'var(--accent)' : 'var(--border)',
+          background: isDragOver ? 'rgba(0,212,170,0.04)' : 'var(--surface)',
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+        onPaste={handlePaste}
+      >
+        <textarea
+          className="w-full rounded-lg px-4 pt-3 pb-10 text-xs resize-none outline-none bg-transparent"
+          style={{
+            color: 'var(--text)',
+            minHeight: '80px',
+            maxHeight: '160px',
+          }}
+          placeholder="신문 기사, 리포트 내용 붙여넣기... (Ctrl+Enter로 제출 / Ctrl+V로 스크린샷 첨부 / 파일 드래그&드롭)"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+
+        {/* Bottom toolbar */}
         <div
-          className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all"
-          style={{
-            borderColor: isDragOver ? 'var(--accent)' : 'var(--border)',
-            background: isDragOver ? 'rgba(0,212,170,0.05)' : 'var(--surface2)',
-          }}
-          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
+          className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 py-2 rounded-b-lg"
+          style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}
         >
-          <input
-            ref={fileRef}
-            type="file"
-            className="hidden"
-            accept=".pdf,image/*"
-            multiple
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              if (files.length > 0) processFiles(files);
-              // reset so same files can be re-selected
-              e.target.value = '';
-            }}
-          />
-          <div className="text-3xl mb-2">📎</div>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            PDF / 이미지를 드래그하거나 클릭하여 업로드
-          </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            여러 파일 동시 선택 가능 · 파일 개수/용량 제한 없음
-          </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            또는{' '}
-            <kbd className="px-1 py-0.5 rounded text-xs" style={{ background: 'var(--border)' }}>
-              Ctrl+V
-            </kbd>
-            로 스크린샷 붙여넣기
-          </p>
-        </div>
-      )}
+          <div className="flex items-center gap-3">
+            {/* File attach button */}
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-1.5 text-xs opacity-60 hover:opacity-100 transition-opacity"
+              style={{ color: 'var(--text-muted)' }}
+              title="파일 첨부 (PDF, 이미지 / 파일당 최대 3MB / 한번에 최대 30개)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+              </svg>
+              파일 첨부
+            </button>
+            <span className="text-xs opacity-30" style={{ color: 'var(--text-muted)' }}>
+              파일당 최대 3MB · 최대 30개
+            </span>
+          </div>
 
-      {status && (
-        <p
-          className="text-xs mt-2"
-          style={{
-            color:
-              status === '완료'
-                ? 'var(--green)'
-                : status.includes('오류')
-                ? 'var(--red)'
-                : 'var(--accent)',
+          {text.trim() && (
+            <button
+              onClick={processText}
+              className="text-xs px-3 py-1 rounded font-bold transition-all hover:opacity-80"
+              style={{ background: 'var(--accent)', color: '#000' }}
+            >
+              제출
+            </button>
+          )}
+        </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          className="hidden"
+          accept=".pdf,image/*"
+          multiple
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 0) processFiles(files);
+            e.target.value = '';
           }}
-        >
-          ▶ {status}
-        </p>
-      )}
+        />
+      </div>
     </div>
   );
 }

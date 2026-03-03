@@ -1,14 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { RSS_SOURCES, NewsItem } from '@/lib/rss-sources';
 import { parseStringPromise } from 'xml2js';
 
 /** Returns true if the pubDate string is within the last 24 hours (KST-aware). */
 function isWithin24HoursKST(pubDateStr: string): boolean {
-  if (!pubDateStr) return true; // include if no date available
+  if (!pubDateStr) return true;
   try {
     const pubDate = new Date(pubDateStr);
-    if (isNaN(pubDate.getTime())) return true; // include if unparseable
-    // KST = UTC+9; we compare absolute timestamps so no conversion needed
+    if (isNaN(pubDate.getTime())) return true;
     const nowMs = Date.now();
     const diff = nowMs - pubDate.getTime();
     return diff >= 0 && diff <= 24 * 60 * 60 * 1000;
@@ -85,8 +84,18 @@ function extractLink(val: unknown): string {
   return '';
 }
 
-export async function GET() {
-  const results = await Promise.allSettled(RSS_SOURCES.map(fetchFeed));
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const sourcesParam = searchParams.get('sources');
+  const allowedSources = sourcesParam
+    ? new Set(sourcesParam.split(',').map((s) => s.trim()))
+    : null;
+
+  const sourcesToFetch = allowedSources
+    ? RSS_SOURCES.filter((s) => allowedSources.has(s.name))
+    : RSS_SOURCES;
+
+  const results = await Promise.allSettled(sourcesToFetch.map(fetchFeed));
   const allNews: NewsItem[] = [];
 
   results.forEach((result) => {

@@ -8,77 +8,147 @@ interface BriefingDisplayProps {
   loading?: boolean;
 }
 
-// Render a single line, converting [🔗](URL) to clickable anchor tags
-function renderLineWithLinks(line: string, key: number) {
-  const linkPattern = /\[🔗\]\((https?:\/\/[^)]+)\)/g;
+// Render source citation line: 출처: Bloomberg (https://...), CNBC (https://...)
+function renderCitationLine(line: string, key: number) {
+  const prefix = '출처:';
+  const rest = line.slice(prefix.length);
+  // Match: 소스명 (URL) patterns
+  const pattern = /([\w\s가-힣/&·]+?)\s*\((https?:\/\/[^)]+)\)/g;
   const parts: React.ReactNode[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = linkPattern.exec(line)) !== null) {
+  while ((match = pattern.exec(rest)) !== null) {
     if (match.index > last) {
-      parts.push(<span key={`t${last}`}>{line.slice(last, match.index)}</span>);
+      parts.push(<span key={`t${last}`}>{rest.slice(last, match.index)}</span>);
     }
     parts.push(
       <a
         key={`l${match.index}`}
-        href={match[1]}
+        href={match[2]}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'var(--accent)', textDecoration: 'none', marginLeft: '4px' }}
-        onMouseEnter={(e) => ((e.target as HTMLElement).style.opacity = '0.7')}
-        onMouseLeave={(e) => ((e.target as HTMLElement).style.opacity = '1')}
+        className="underline hover:opacity-70 transition-opacity"
+        style={{ color: 'var(--accent)' }}
       >
-        🔗
+        {match[1].trim()}
       </a>
     );
     last = match.index + match[0].length;
   }
-  if (last < line.length) {
-    parts.push(<span key={`t${last}`}>{line.slice(last)}</span>);
+  if (last < rest.length) {
+    parts.push(<span key={`t${last}`}>{rest.slice(last)}</span>);
   }
 
-  return <span key={key}>{parts}</span>;
+  return (
+    <div
+      key={key}
+      className="text-xs mt-2 mb-1"
+      style={{ color: 'var(--text-muted)', opacity: 0.75 }}
+    >
+      <span style={{ color: 'var(--text-muted)' }}>출처: </span>
+      {parts.length > 0 ? parts : <span>{rest}</span>}
+    </div>
+  );
 }
 
 function renderBriefing(text: string) {
   const lines = text.split('\n');
   return lines.map((line, i) => {
-    if (line === '---') {
-      return <hr key={i} style={{ borderColor: 'var(--border)', margin: '12px 0' }} />;
-    }
-    if (line.startsWith('- ') || line.startsWith('• ')) {
-      const content = line.slice(2);
+    // Divider
+    if (/^-{3,}$/.test(line.trim())) {
       return (
-        <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px', paddingLeft: '4px' }}>
-          <span style={{ color: 'var(--accent)', flexShrink: 0 }}>–</span>
-          <span>{renderLineWithLinks(content, i)}</span>
-        </div>
+        <hr key={i} style={{ borderColor: 'var(--border)', margin: '16px 0', opacity: 0.5 }} />
       );
     }
-    // Section header lines (contain emoji at start) or bold lines
-    const isSectionHeader = /^[📅🇺🇸🤖🛢🌍🇰🇷]/.test(line);
-    if (isSectionHeader) {
+
+    // Section header (## prefix)
+    if (line.startsWith('## ')) {
+      const content = line.slice(3);
       return (
         <div
           key={i}
           style={{
             fontWeight: '700',
-            marginTop: i === 0 ? 0 : '16px',
-            marginBottom: '8px',
-            color: 'var(--text)',
+            fontSize: '0.8rem',
+            letterSpacing: '0.05em',
+            marginTop: i === 0 ? 0 : '14px',
+            marginBottom: '6px',
+            color: 'var(--accent)',
           }}
         >
-          {line}
+          {content}
         </div>
       );
     }
+
+    // Source citation line
+    if (line.startsWith('출처:')) {
+      return renderCitationLine(line, i);
+    }
+
+    // Numbered list items (1. 2. 3.)
+    if (/^\d+\.\s/.test(line)) {
+      const match = line.match(/^(\d+)\.\s(.*)$/);
+      if (match) {
+        return (
+          <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '4px', paddingLeft: '4px' }}>
+            <span style={{ color: 'var(--accent)', flexShrink: 0, minWidth: '16px' }}>{match[1]}.</span>
+            <span>{match[2]}</span>
+          </div>
+        );
+      }
+    }
+
+    // Sub-section labels (상승 기업 / 하락 기업 / 주요 지수 / 섹터별 등 — indented plain labels)
+    if (
+      /^(상승 기업|하락 기업|주요 지수|섹터별 주요 뉴스|주요 기업)$/.test(line.trim())
+    ) {
+      return (
+        <div
+          key={i}
+          style={{
+            fontWeight: '600',
+            fontSize: '0.72rem',
+            marginTop: '10px',
+            marginBottom: '4px',
+            color: 'var(--text)',
+            opacity: 0.85,
+          }}
+        >
+          {line.trim()}
+        </div>
+      );
+    }
+
+    // Bullet items
+    if (line.startsWith('- ') || line.startsWith('• ')) {
+      const content = line.slice(2);
+      return (
+        <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '4px', paddingLeft: '4px' }}>
+          <span style={{ color: 'var(--accent)', flexShrink: 0 }}>–</span>
+          <span>{content}</span>
+        </div>
+      );
+    }
+
+    // Empty line
     if (line.trim() === '') {
       return <div key={i} style={{ height: '4px' }} />;
     }
+
+    // Default text (date header, plain content)
     return (
-      <div key={i} style={{ marginBottom: '2px' }}>
-        {renderLineWithLinks(line, i)}
+      <div
+        key={i}
+        style={{
+          marginBottom: '2px',
+          fontWeight: i === 0 ? '700' : undefined,
+          fontSize: i === 0 ? '0.85rem' : undefined,
+          color: i === 0 ? 'var(--text)' : undefined,
+        }}
+      >
+        {line}
       </div>
     );
   });
@@ -150,7 +220,7 @@ export default function BriefingDisplay({ briefing, date, loading }: BriefingDis
       </div>
 
       {/* Content */}
-      <div className="p-5 overflow-auto max-h-[75vh]">
+      <div className="p-5 overflow-auto" style={{ maxHeight: '70vh' }}>
         <div className="briefing-content text-xs leading-relaxed" style={{ color: 'var(--text)' }}>
           {renderBriefing(briefing)}
         </div>

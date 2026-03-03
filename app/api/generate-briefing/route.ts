@@ -20,6 +20,13 @@ interface MarketData {
   sp500: IndexData | null;
   nasdaq: IndexData | null;
   dow: IndexData | null;
+  gold: IndexData | null;
+  silver: IndexData | null;
+  copper: IndexData | null;
+  dollarIndex: IndexData | null;
+  kospi: IndexData | null;
+  kosdaq: IndexData | null;
+  usdkrw: IndexData | null;
   gainers: MoverData[];
   losers: MoverData[];
 }
@@ -28,61 +35,86 @@ function getClient() {
   return new Anthropic();
 }
 
-const SYSTEM_PROMPT = `당신은 전문 경제 뉴스 애널리스트입니다. 수집된 RSS 뉴스를 분석하여 투자자에게 유용한 일일 경제 브리핑을 작성합니다.
+const SYSTEM_PROMPT = `당신은 전문 경제 뉴스 애널리스트입니다. 수집된 RSS 뉴스와 시장 데이터를 분석하여 투자자에게 유용한 일일 경제 브리핑을 작성합니다.
 
-## 포함 기준
-- 미국 3대지수 (S&P500, 나스닥, 다우) 동향
-- S&P500 기준 상승 TOP3 / 하락 TOP3 종목
-- 빅테크 (엔비디아, 애플, 메타, 구글, 마이크로소프트, 테슬라)
-- 반도체/AI 섹터
-- 원자재 (유가, 금)
-- 환율 (달러/원)
-- 연준 금리/통화정책
-- 무역/관세 정책 (미중, 미한)
-- 지정학적 리스크 및 국제정세에 따른 경제흐름
+## 작성 규칙
+- 이모지 사용 절대 금지
+- 각 섹션 마지막에 "출처:" 줄을 추가 (형식: 출처: 소스명 (URL), 소스명 (URL))
+- URL은 뉴스 목록에 제공된 실제 URL만 사용 (임의 생성 금지)
+- 별다른 이슈가 없는 섹션은 과감히 생략
+- 어그로성/광고성/중복 기사 제외
+- 각 항목은 핵심 수치, 기업명, 시장 반응을 포함하여 간결하게 작성
 
-## 제외 기준
-- 어그로성 제목 (급등, 폭락, 반드시 등 자극적 표현)
-- 중복 기사
-- 광고성/매수유도성 기사
-- 별 4개 미만 수준의 저퀄리티 기사
+## 출력 형식 (이 형식을 정확히 따를 것)
 
-## 출력 형식 (반드시 이 형식을 정확히 따를 것)
+{날짜} 경제시장 Brief
 
-📅 {날짜} 경제 브리핑
+## 주요 지수
+- S&P500 : {수치} ({등락폭} / {등락률}%)
+- 나스닥 : {수치} ({등락폭} / {등락률}%)
+- 다우 : {수치} ({등락폭} / {등락률}%)
+- 금 : {수치}
+- 은 : {수치}
+- 구리 : {수치}
+- 달러 : {수치}
 
-🇺🇸 미국 증시 마감
-- S&P500: {수치} ({등락률})
-- 나스닥: {수치} ({등락률})
-- 다우: {수치} ({등락률})
-- 📈 S&P500 상승 TOP3: {종목1}, {종목2}, {종목3}
-- 📉 S&P500 하락 TOP3: {종목1}, {종목2}, {종목3}
-
-🤖 빅테크/AI/반도체
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-
-🛢 원자재/환율
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-
-🌍 국제정세
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-
-🇰🇷 국내 경제
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
-- {핵심 내용을 1~2문장으로 요약} [🔗](기사URL)
+## 주요 이슈
+(최대 5항목, 항목당 2줄 이내, 가장 시장에 영향력 있는 이슈 우선)
+- {이슈 내용}
+출처: {소스명} ({URL}), {소스명} ({URL})
 
 ---
-*수집된 뉴스 기반 AI 요약 | Claude AI 생성*
 
-## bullet 작성 규칙
-- 각 bullet은 1~2문장, 핵심 수치·기업명·시장 반응 포함
-- 문장 끝에 반드시 [🔗](기사URL) 형식으로 해당 기사의 실제 URL 첨부
-- 섹터별 관련 기사가 없으면 해당 섹션 생략
-- URL은 반드시 뉴스 목록에 제공된 실제 URL만 사용 (임의 생성 금지)`;
+## S&P500 상승/하락 기업 TOP3
+
+상승 기업
+1. {기업명} ({티커}) / +{등락률}% : {상승 이유 2~3줄}
+2. {기업명} ({티커}) / +{등락률}% : {상승 이유 2~3줄}
+3. {기업명} ({티커}) / +{등락률}% : {상승 이유 2~3줄}
+
+하락 기업
+1. {기업명} ({티커}) / -{등락률}% : {하락 이유 2~3줄}
+2. {기업명} ({티커}) / -{등락률}% : {하락 이유 2~3줄}
+3. {기업명} ({티커}) / -{등락률}% : {하락 이유 2~3줄}
+
+출처: Yahoo Finance, {소스명} ({URL})
+
+---
+
+## 빅테크/AI/반도체/M7
+(M7 우선 정리. 오라클, 팔란티어 등 시장이 주목하는 기업 포함. 별다른 뉴스 없는 기업은 생략)
+- {기업명} ({티커}) / {등락률}% : {이슈 2줄 이내}
+출처: {소스명} ({URL})
+
+---
+
+## 원자재 / 환율
+(총 5항목 이내, 항목당 2줄 이내)
+- {내용}
+출처: {소스명} ({URL})
+
+---
+
+## 국제정세
+(총 5항목 이내, 항목당 2줄 이내)
+- {내용}
+출처: {소스명} ({URL})
+
+---
+
+## 국내 경제
+
+주요 지수
+- 코스피 : {수치} ({등락폭} / {등락률}%)
+- 코스닥 : {수치} ({등락폭} / {등락률}%)
+- 환율 : {수치} 원/달러
+
+섹터별 주요 뉴스 (이슈없는 섹터 스킵, 총 6항목 이내, 항목당 2줄 이내)
+- {내용}
+
+주요 기업 (삼성전자, 하이닉스, 현대차 등 대표 기업 중요 소식 우선 선별)
+- {기업명} : {이슈}
+출처: {소스명} ({URL})`;
 
 function formatMarketData(md: MarketData): string {
   const fmt = (v: number, decimals = 2) => v.toFixed(decimals);
@@ -105,16 +137,37 @@ function formatMarketData(md: MarketData): string {
       `다우: ${fmt(md.dow.price)} (${sign(md.dow.change)}${fmt(md.dow.change)}, ${sign(md.dow.changePercent)}${fmt(md.dow.changePercent)}%)`
     );
   }
+  if (md.gold) {
+    lines.push(`금(GC=F): ${fmt(md.gold.price)} (${sign(md.gold.changePercent)}${fmt(md.gold.changePercent)}%)`);
+  }
+  if (md.silver) {
+    lines.push(`은(SI=F): ${fmt(md.silver.price)} (${sign(md.silver.changePercent)}${fmt(md.silver.changePercent)}%)`);
+  }
+  if (md.copper) {
+    lines.push(`구리(HG=F): ${fmt(md.copper.price)} (${sign(md.copper.changePercent)}${fmt(md.copper.changePercent)}%)`);
+  }
+  if (md.dollarIndex) {
+    lines.push(`달러인덱스: ${fmt(md.dollarIndex.price)} (${sign(md.dollarIndex.changePercent)}${fmt(md.dollarIndex.changePercent)}%)`);
+  }
+  if (md.kospi) {
+    lines.push(`코스피: ${fmt(md.kospi.price)} (${sign(md.kospi.changePercent)}${fmt(md.kospi.changePercent)}%)`);
+  }
+  if (md.kosdaq) {
+    lines.push(`코스닥: ${fmt(md.kosdaq.price)} (${sign(md.kosdaq.changePercent)}${fmt(md.kosdaq.changePercent)}%)`);
+  }
+  if (md.usdkrw) {
+    lines.push(`환율(USD/KRW): ${fmt(md.usdkrw.price, 0)}원`);
+  }
 
   if (md.gainers.length > 0) {
     const list = md.gainers
-      .map((g) => `${g.symbol}(${sign(g.changePercent)}${fmt(g.changePercent)}%)`)
+      .map((g) => `${g.symbol} ${g.name}(${sign(g.changePercent)}${fmt(g.changePercent)}%)`)
       .join(', ');
     lines.push(`S&P500 상승 TOP3: ${list}`);
   }
   if (md.losers.length > 0) {
     const list = md.losers
-      .map((l) => `${l.symbol}(${sign(l.changePercent)}${fmt(l.changePercent)}%)`)
+      .map((l) => `${l.symbol} ${l.name}(${sign(l.changePercent)}${fmt(l.changePercent)}%)`)
       .join(', ');
     lines.push(`S&P500 하락 TOP3: ${list}`);
   }
@@ -148,7 +201,7 @@ ${newsText}
 
 ${manualContent ? `## 추가 자료 (PDF/이미지/텍스트 업로드)\n${manualContent}` : ''}
 
-위 뉴스와 시장 데이터를 분석하여 일일 경제 브리핑을 작성해주세요. 시장 마감 데이터가 제공된 경우 해당 수치를 그대로 사용하고, 없으면 "시장 마감 데이터 미수집"으로 표기하세요.`;
+위 뉴스와 시장 데이터를 분석하여 일일 경제 브리핑을 작성해주세요. 시장 마감 데이터가 제공된 경우 해당 수치를 그대로 사용하고, 없으면 "데이터 미수집"으로 표기하세요.`;
 
     const client = getClient();
     const message = await client.messages.create({
@@ -163,7 +216,6 @@ ${manualContent ? `## 추가 자료 (PDF/이미지/텍스트 업로드)\n${manua
 
     const createdAt = new Date().toISOString();
 
-    // Save to KV (non-fatal)
     try {
       await saveBriefing({
         id: createdAt,

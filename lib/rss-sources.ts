@@ -48,6 +48,12 @@ export const RSS_SOURCES: RssSource[] = [
     lang: 'ko',
     category: 'korea',
   },
+  {
+    name: '한경글로벌마켓',
+    url: 'https://www.hankyung.com/feed/globalmarket',
+    lang: 'ko',
+    category: 'global-korea',
+  },
 ];
 
 export interface NewsItem {
