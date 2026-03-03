@@ -152,7 +152,7 @@ ${manualContent ? `## 추가 자료 (PDF/이미지/텍스트 업로드)\n${manua
 
     const client = getClient();
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
