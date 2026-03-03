@@ -1,18 +1,37 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/Header';
 import BriefingDisplay from '@/components/BriefingDisplay';
 
 interface BriefingRecord {
+  id: string;
   date: string;
   createdAt: string;
   briefing: string;
   hasManualInput: boolean;
 }
 
+/** Format an ISO timestamp as KST datetime string */
+function formatDateTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
 export default function ArchivePage() {
-  const [dates, setDates] = useState<string[]>([]);
+  const [ids, setIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [record, setRecord] = useState<BriefingRecord | null>(null);
   const [loading, setLoading] = useState(false);
@@ -25,18 +44,18 @@ export default function ArchivePage() {
         if (d.error) {
           setKvError(true);
         } else {
-          setDates(d.dates || []);
+          setIds(d.ids || []);
         }
       })
       .catch(() => setKvError(true));
   }, []);
 
-  const loadBriefing = useCallback(async (date: string) => {
-    setSelected(date);
+  const loadBriefing = useCallback(async (id: string) => {
+    setSelected(id);
     setLoading(true);
     setRecord(null);
     try {
-      const res = await fetch(`/api/archive?date=${date}`);
+      const res = await fetch(`/api/archive?id=${encodeURIComponent(id)}`);
       const data = await res.json();
       if (!data.error) setRecord(data);
     } finally {
@@ -44,15 +63,27 @@ export default function ArchivePage() {
     }
   }, []);
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'short',
-    });
-  };
+  const handleDelete = useCallback(
+    async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!confirm('이 브리핑을 삭제하시겠습니까?')) return;
+      try {
+        const res = await fetch(`/api/archive?id=${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        });
+        if (res.ok) {
+          setIds((prev) => prev.filter((i) => i !== id));
+          if (selected === id) {
+            setSelected(null);
+            setRecord(null);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [selected]
+  );
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -64,7 +95,7 @@ export default function ArchivePage() {
             브리핑 아카이브
           </h1>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            날짜별 경제 브리핑 열람
+            날짜/시간별 경제 브리핑 열람
           </p>
         </div>
 
@@ -82,7 +113,7 @@ export default function ArchivePage() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Date list */}
+          {/* ID list */}
           <div
             className="rounded-lg border overflow-hidden"
             style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
@@ -91,28 +122,41 @@ export default function ArchivePage() {
               className="px-4 py-2 border-b text-xs font-bold tracking-wider uppercase"
               style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
             >
-              저장된 브리핑 ({dates.length})
+              저장된 브리핑 ({ids.length})
             </div>
             <div className="overflow-auto max-h-[70vh]">
-              {dates.length === 0 && !kvError ? (
+              {ids.length === 0 && !kvError ? (
                 <div className="p-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
                   저장된 브리핑이 없습니다
                 </div>
               ) : (
-                dates.map((date) => (
-                  <button
-                    key={date}
-                    onClick={() => loadBriefing(date)}
-                    className="w-full text-left px-4 py-3 text-xs transition-all border-b"
+                ids.map((id) => (
+                  <div
+                    key={id}
+                    className="flex items-center border-b"
                     style={{
                       borderColor: 'var(--border)',
-                      background: selected === date ? 'var(--surface2)' : 'transparent',
-                      color: selected === date ? 'var(--accent)' : 'var(--text)',
-                      borderLeft: selected === date ? '2px solid var(--accent)' : '2px solid transparent',
+                      background: selected === id ? 'var(--surface2)' : 'transparent',
+                      borderLeft:
+                        selected === id ? '2px solid var(--accent)' : '2px solid transparent',
                     }}
                   >
-                    {formatDate(date)}
-                  </button>
+                    <button
+                      onClick={() => loadBriefing(id)}
+                      className="flex-1 text-left px-4 py-3 text-xs transition-all"
+                      style={{ color: selected === id ? 'var(--accent)' : 'var(--text)' }}
+                    >
+                      {formatDateTime(id)}
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(id, e)}
+                      className="px-3 py-3 text-xs transition-all hover:opacity-100 opacity-30"
+                      style={{ color: 'var(--red)' }}
+                      title="삭제"
+                    >
+                      🗑
+                    </button>
+                  </div>
                 ))
               )}
             </div>
@@ -125,7 +169,7 @@ export default function ArchivePage() {
             ) : record ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  <span>{formatDate(record.date)}</span>
+                  <span>{formatDateTime(record.createdAt)}</span>
                   {record.hasManualInput && (
                     <span
                       className="px-2 py-0.5 rounded"
@@ -134,9 +178,6 @@ export default function ArchivePage() {
                       + 수동 자료 포함
                     </span>
                   )}
-                  <span className="ml-auto">
-                    생성: {new Date(record.createdAt).toLocaleTimeString('ko-KR')}
-                  </span>
                 </div>
                 <BriefingDisplay briefing={record.briefing} date={record.date} />
               </div>
