@@ -3,7 +3,9 @@
 import { useState, useCallback } from 'react';
 import Header from '@/components/Header';
 import BriefingDisplay from '@/components/BriefingDisplay';
+import { AIProviderSelector } from '@/components/AIProviderSelector';
 import { RSS_SOURCES } from '@/lib/rss-sources';
+import type { AIProvider } from '@/lib/ai-providers';
 
 const ALL_RSS_SOURCE_NAMES = RSS_SOURCES.map((s) => s.name);
 
@@ -17,6 +19,7 @@ export default function HomePage() {
     new Set(ALL_RSS_SOURCE_NAMES)
   );
   const [useYahooFinance, setUseYahooFinance] = useState(true);
+  const [provider, setProvider] = useState<AIProvider>('claude');
 
   const today = new Date()
     .toLocaleDateString('ko-KR', {
@@ -72,6 +75,7 @@ export default function HomePage() {
           newsItems: items,
           date: today,
           marketData: marketData || undefined,
+          provider,
         }),
       });
 
@@ -88,7 +92,7 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [today, selectedSources, useYahooFinance]);
+  }, [today, selectedSources, useYahooFinance, provider]);
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
@@ -186,8 +190,9 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Generate button */}
-          <div className="flex justify-end items-center gap-2">
+          {/* Generate button + AI selector */}
+          <div className="flex justify-end items-center gap-3 flex-wrap">
+            <AIProviderSelector value={provider} onChange={setProvider} />
             <button
               onClick={generateBriefing}
               disabled={loading}

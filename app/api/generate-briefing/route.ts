@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { NewsItem } from '@/lib/rss-sources';
 import { saveBriefing } from '@/lib/kv';
+import { generateText, type AIProvider } from '@/lib/ai-providers';
 
 interface IndexData {
   symbol: string;
@@ -31,9 +31,6 @@ interface MarketData {
   losers: MoverData[];
 }
 
-function getClient() {
-  return new Anthropic();
-}
 
 const SYSTEM_PROMPT = `당신은 전문 경제 뉴스 애널리스트입니다. 수집된 RSS 뉴스와 시장 데이터를 분석하여 투자자에게 유용한 일일 경제 브리핑을 작성합니다.
 
@@ -178,11 +175,12 @@ function formatMarketData(md: MarketData): string {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { newsItems, manualContent, date, marketData } = body as {
+    const { newsItems, manualContent, date, marketData, provider = 'claude' } = body as {
       newsItems: NewsItem[];
       manualContent?: string;
       date: string;
       marketData?: MarketData;
+      provider?: AIProvider;
     };
 
     const newsText = newsItems
@@ -203,16 +201,7 @@ ${manualContent ? `## 추가 자료 (PDF/이미지/텍스트 업로드)\n${manua
 
 위 뉴스와 시장 데이터를 분석하여 일일 경제 브리핑을 작성해주세요. 시장 마감 데이터가 제공된 경우 해당 수치를 그대로 사용하고, 없으면 "데이터 미수집"으로 표기하세요.`;
 
-    const client = getClient();
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    const briefingText =
-      message.content[0].type === 'text' ? message.content[0].text : '';
+    const briefingText = await generateText(provider, SYSTEM_PROMPT, userMessage, 4096);
 
     const createdAt = new Date().toISOString();
 

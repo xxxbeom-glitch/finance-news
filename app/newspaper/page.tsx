@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Header from '@/components/Header';
+import { AIProviderSelector } from '@/components/AIProviderSelector';
+import type { AIProvider } from '@/lib/ai-providers';
 
 const UPLOAD_CONCURRENCY = 4;
 
@@ -44,6 +46,7 @@ export default function NewspaperPage() {
   const [result, setResult] = useState('');
   const [genError, setGenError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [provider, setProvider] = useState<AIProvider>('claude');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const today = new Date()
@@ -201,6 +204,7 @@ export default function NewspaperPage() {
           extractedTexts: doneFiles.map((f) => f.extracted!),
           date: today,
           fileCount: doneFiles.length,
+          provider,
         }),
       });
       const data = await res.json();
@@ -211,7 +215,7 @@ export default function NewspaperPage() {
     } finally {
       setGenerating(false);
     }
-  }, [files, today]);
+  }, [files, today, provider]);
 
   const copyResult = useCallback(() => {
     if (!result) return;
@@ -444,8 +448,9 @@ export default function NewspaperPage() {
             </div>
           </div>
 
-          {/* Generate button */}
-          <div className="flex justify-end items-center gap-2">
+          {/* Generate button + AI selector */}
+          <div className="flex justify-end items-center gap-3 flex-wrap">
+            <AIProviderSelector value={provider} onChange={setProvider} />
             <button
               onClick={generateSummary}
               disabled={!hasExtracted || generating || busyCount > 0}

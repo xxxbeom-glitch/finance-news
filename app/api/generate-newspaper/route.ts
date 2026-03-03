@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { saveNewspaper } from '@/lib/kv';
+import { generateText, type AIProvider } from '@/lib/ai-providers';
 
 export async function POST(req: NextRequest) {
-  const client = new Anthropic();
   try {
     const body = await req.json();
-    const { extractedTexts, date, fileCount } = body as {
+    const { extractedTexts, date, fileCount, provider = 'claude' } = body as {
       extractedTexts: string[];
       date: string;
       fileCount: number;
+      provider?: AIProvider;
     };
 
     if (!extractedTexts || extractedTexts.length === 0) {
@@ -52,13 +52,7 @@ ${date} 한국경제 요약
 추출된 내용:
 ${combined}`;
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = message.content[0].type === 'text' ? message.content[0].text : '';
+    const content = await generateText(provider, null, prompt, 4096);
 
     const createdAt = new Date().toISOString();
     try {
