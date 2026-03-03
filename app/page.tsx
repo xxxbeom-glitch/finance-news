@@ -26,12 +26,18 @@ export default function HomePage() {
     setRssCount(null);
 
     try {
-      // Step 1: Fetch RSS
-      setStep('RSS 뉴스 수집 중...');
-      const rssRes = await fetch('/api/fetch-rss');
+      // Step 1: Fetch RSS and market data in parallel
+      setStep('RSS 뉴스 수집 및 시장 데이터 수집 중...');
+      const [rssRes, marketRes] = await Promise.all([
+        fetch('/api/fetch-rss'),
+        fetch('/api/market-data'),
+      ]);
+
       if (!rssRes.ok) throw new Error('RSS 수집 실패');
       const { items, count } = await rssRes.json();
       setRssCount(count);
+
+      const marketData = marketRes.ok ? await marketRes.json() : null;
 
       // Step 2: Generate briefing via Claude
       setStep(`${count}개 기사 AI 분석 중...`);
@@ -42,6 +48,7 @@ export default function HomePage() {
           newsItems: items,
           manualContent: manualSummary || undefined,
           date: today,
+          marketData: marketData || undefined,
         }),
       });
 
@@ -71,7 +78,7 @@ export default function HomePage() {
             경제 뉴스 자동 브리핑
           </h1>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            7개 RSS 소스 자동 수집 → Claude AI 필터링/요약 → 날짜별 아카이빙
+            7개 RSS 소스 자동 수집 → Yahoo Finance 시장 데이터 → Claude AI 필터링/요약 → 날짜별 아카이빙
           </p>
         </div>
 
@@ -87,6 +94,10 @@ export default function HomePage() {
               <span style={{ color: 'var(--text-muted)' }}>{s}</span>
             </span>
           ))}
+          <span className="flex items-center gap-1 ml-2">
+            <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: 'var(--accent)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>Yahoo Finance (S&P500/나스닥/다우)</span>
+          </span>
           {rssCount !== null && (
             <span className="ml-auto" style={{ color: 'var(--accent)' }}>
               {rssCount}개 수집됨
@@ -166,7 +177,7 @@ export default function HomePage() {
                   브리핑을 생성하려면 &quot;오늘 브리핑 생성&quot; 버튼을 누르세요
                 </p>
                 <p className="text-xs mt-2" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
-                  RSS 수집 → AI 필터링 → 요약까지 약 20~40초 소요
+                  RSS 수집 → 시장 데이터 수집 → AI 필터링 → 요약까지 약 20~40초 소요
                 </p>
               </div>
             )}
