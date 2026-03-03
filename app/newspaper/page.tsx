@@ -125,6 +125,8 @@ interface PdfFile {
   extracted?: string;
   // stored for retry (Dropbox files only)
   dropboxUrl?: string;
+  // set to ZIP filename when extracted from a ZIP
+  sourceZip?: string;
 }
 
 function formatSize(bytes: number) {
@@ -141,6 +143,7 @@ export default function NewspaperPage() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState('');
   const [genError, setGenError] = useState('');
+  const [savedToArchive, setSavedToArchive] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -271,7 +274,7 @@ export default function NewspaperPage() {
 
   const handleFiles = useCallback(
     async (selected: File[]) => {
-      const allPdfs: File[] = [];
+      const allPdfs: Array<{ file: File; sourceZip?: string }> = [];
 
       for (const f of selected) {
         const isZip =
@@ -282,32 +285,39 @@ export default function NewspaperPage() {
         if (isZip) {
           try {
             const zip = await JSZip.loadAsync(f);
+            const extracted: File[] = [];
             for (const [filename, entry] of Object.entries(zip.files)) {
               if (!entry.dir && filename.toLowerCase().endsWith('.pdf')) {
                 const blob = await entry.async('blob');
                 const baseName = filename.split('/').pop() || filename;
-                allPdfs.push(new File([blob], baseName, { type: 'application/pdf' }));
+                extracted.push(new File([blob], baseName, { type: 'application/pdf' }));
               }
+            }
+            // Sort by name so pages come out in order
+            extracted.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            for (const pdfFile of extracted) {
+              allPdfs.push({ file: pdfFile, sourceZip: f.name });
             }
           } catch {
             // skip invalid zip
           }
         } else if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) {
-          allPdfs.push(f);
+          allPdfs.push({ file: f });
         }
       }
 
       if (allPdfs.length === 0) return;
 
-      const newEntries: PdfFile[] = allPdfs.map((f) => ({
+      const newEntries: PdfFile[] = allPdfs.map(({ file: f, sourceZip }) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name: f.name,
         size: f.size,
         status: 'queued' as const,
+        sourceZip,
       }));
       setFiles((prev) => [...prev, ...newEntries]);
 
-      const pairs = allPdfs.map((f, i) => ({ file: f, entry: newEntries[i] }));
+      const pairs = allPdfs.map(({ file: f }, i) => ({ file: f, entry: newEntries[i] }));
       pairs.forEach(({ file, entry }) => fileObjectsRef.current.set(entry.id, file));
       for (let i = 0; i < pairs.length; i += UPLOAD_CONCURRENCY) {
         await Promise.allSettled(
@@ -340,11 +350,20 @@ export default function NewspaperPage() {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
+  const removeZipGroup = useCallback((zipName: string) => {
+    setFiles((prev) => {
+      const toRemove = prev.filter((f) => f.sourceZip === zipName);
+      toRemove.forEach((f) => fileObjectsRef.current.delete(f.id));
+      return prev.filter((f) => f.sourceZip !== zipName);
+    });
+  }, []);
+
   const clearAll = useCallback(() => {
     fileObjectsRef.current.clear();
     setFiles([]);
     setResult('');
     setGenError('');
+    setSavedToArchive(null);
     try {
       sessionStorage.removeItem(SESSION_KEY_FILES);
       sessionStorage.removeItem(SESSION_KEY_RESULT);
@@ -358,6 +377,7 @@ export default function NewspaperPage() {
     setGenerating(true);
     setGenError('');
     setResult('');
+    setSavedToArchive(null);
 
     try {
       const res = await fetch('/api/generate-newspaper', {
@@ -373,6 +393,7 @@ export default function NewspaperPage() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setResult(data.content);
+      setSavedToArchive(data.savedToArchive ?? false);
     } catch (e) {
       setGenError(e instanceof Error ? e.message : '생성 실패');
     } finally {
@@ -430,6 +451,12 @@ export default function NewspaperPage() {
                   <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
                     hankyung_{today}.md
                   </span>
+                  {savedToArchive === true && (
+                    <span className="text-xs ml-2" style={{ color: 'var(--green)' }}>아카이브 저장됨</span>
+                  )}
+                  {savedToArchive === false && (
+                    <span className="text-xs ml-2" style={{ color: 'var(--yellow, #f59e0b)' }}>아카이브 미저장 (KV 미연결)</span>
+                  )}
                 </div>
                 <button
                   onClick={copyResult}
@@ -493,69 +520,90 @@ export default function NewspaperPage() {
                 )}
 
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {files.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded text-xs"
-                      style={{
-                        background: 'var(--surface2)',
-                        border: `1px solid ${
-                          f.status === 'done' ? 'var(--green)'
-                          : f.status === 'error' ? 'var(--red)'
-                          : f.status === 'processing' ? 'var(--accent)'
-                          : 'var(--border)'
-                        }`,
-                        opacity: f.status === 'queued' ? 0.5 : 1,
-                        maxWidth: '280px',
-                      }}
-                      title={f.name}
-                    >
-                      <span
-                        className="shrink-0 font-medium"
+                  {(() => {
+                    // Group ZIP files together, show individual PDFs separately
+                    const zipGroups = new Map<string, PdfFile[]>();
+                    const individualFiles: PdfFile[] = [];
+                    for (const f of files) {
+                      if (f.sourceZip) {
+                        if (!zipGroups.has(f.sourceZip)) zipGroups.set(f.sourceZip, []);
+                        zipGroups.get(f.sourceZip)!.push(f);
+                      } else {
+                        individualFiles.push(f);
+                      }
+                    }
+
+                    const zipEntries = Array.from(zipGroups.entries()).map(([zipName, group]) => {
+                      const done = group.filter((f) => f.status === 'done').length;
+                      const err = group.filter((f) => f.status === 'error').length;
+                      const busy = group.some((f) => f.status === 'processing' || f.status === 'queued');
+                      const allDone = done === group.length;
+                      const borderColor = allDone ? 'var(--green)' : err > 0 ? 'var(--red)' : busy ? 'var(--accent)' : 'var(--border)';
+                      const statusColor = allDone ? 'var(--green)' : err > 0 ? 'var(--red)' : 'var(--accent)';
+                      const statusText = allDone ? '완료' : busy ? `${done}/${group.length}` : `실패 ${err}`;
+                      return (
+                        <div
+                          key={zipName}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded text-xs"
+                          style={{ background: 'var(--surface2)', border: `1px solid ${borderColor}`, maxWidth: '320px' }}
+                          title={zipName}
+                        >
+                          <span className="shrink-0 font-medium" style={{ color: statusColor }}>{statusText}</span>
+                          <span className="truncate" style={{ color: 'var(--text-muted)', maxWidth: '180px' }}>{zipName}</span>
+                          <span className="shrink-0 opacity-50" style={{ color: 'var(--text-muted)' }}>{group.length}페이지</span>
+                          {!busy && (
+                            <button
+                              onClick={() => removeZipGroup(zipName)}
+                              className="shrink-0 opacity-40 hover:opacity-100 transition-opacity"
+                              style={{ color: 'var(--text-muted)' }}
+                            >✕</button>
+                          )}
+                        </div>
+                      );
+                    });
+
+                    const singleEntries = individualFiles.map((f) => (
+                      <div
+                        key={f.id}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded text-xs"
                         style={{
-                          color:
+                          background: 'var(--surface2)',
+                          border: `1px solid ${
                             f.status === 'done' ? 'var(--green)'
                             : f.status === 'error' ? 'var(--red)'
                             : f.status === 'processing' ? 'var(--accent)'
-                            : 'var(--text-muted)',
+                            : 'var(--border)'
+                          }`,
+                          opacity: f.status === 'queued' ? 0.5 : 1,
+                          maxWidth: '280px',
                         }}
+                        title={f.name}
                       >
-                        {f.status === 'processing' ? '처리중'
-                          : f.status === 'done' ? '완료'
-                          : f.status === 'queued' ? '대기'
-                          : '실패'}
-                      </span>
-                      <span
-                        className="truncate"
-                        style={{ color: 'var(--text-muted)', maxWidth: '160px' }}
-                      >
-                        {f.name}
-                      </span>
-                      <span className="shrink-0 opacity-50" style={{ color: 'var(--text-muted)' }}>
-                        {formatSize(f.size)}
-                      </span>
-                      {/* Retry button */}
-                      {f.status === 'error' && (f.dropboxUrl || fileObjectsRef.current.has(f.id)) && (
-                        <button
-                          onClick={() => retryFile(f.id)}
-                          className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-                          style={{ color: 'var(--accent)' }}
-                          title="재전송"
+                        <span
+                          className="shrink-0 font-medium"
+                          style={{
+                            color:
+                              f.status === 'done' ? 'var(--green)'
+                              : f.status === 'error' ? 'var(--red)'
+                              : f.status === 'processing' ? 'var(--accent)'
+                              : 'var(--text-muted)',
+                          }}
                         >
-                          ↺
-                        </button>
-                      )}
-                      {f.status !== 'processing' && (
-                        <button
-                          onClick={() => removeFile(f.id)}
-                          className="shrink-0 opacity-40 hover:opacity-100 transition-opacity"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                          {f.status === 'processing' ? '처리중' : f.status === 'done' ? '완료' : f.status === 'queued' ? '대기' : '실패'}
+                        </span>
+                        <span className="truncate" style={{ color: 'var(--text-muted)', maxWidth: '160px' }}>{f.name}</span>
+                        <span className="shrink-0 opacity-50" style={{ color: 'var(--text-muted)' }}>{formatSize(f.size)}</span>
+                        {f.status === 'error' && (f.dropboxUrl || fileObjectsRef.current.has(f.id)) && (
+                          <button onClick={() => retryFile(f.id)} className="shrink-0 opacity-70 hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }} title="재전송">↺</button>
+                        )}
+                        {f.status !== 'processing' && (
+                          <button onClick={() => removeFile(f.id)} className="shrink-0 opacity-40 hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}>✕</button>
+                        )}
+                      </div>
+                    ));
+
+                    return [...zipEntries, ...singleEntries];
+                  })()}
                 </div>
               </div>
             )}

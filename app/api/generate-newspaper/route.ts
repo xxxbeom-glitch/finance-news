@@ -55,6 +55,7 @@ ${combined}`;
     const content = await generateText(provider, null, prompt, 4096);
 
     const createdAt = new Date().toISOString();
+    let savedToArchive = false;
     try {
       await saveNewspaper({
         id: createdAt,
@@ -63,11 +64,12 @@ ${combined}`;
         content,
         fileCount,
       });
+      savedToArchive = true;
     } catch {
       // KV 저장 실패는 치명적이지 않음
     }
 
-    return NextResponse.json({ content });
+    return NextResponse.json({ content, savedToArchive });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
