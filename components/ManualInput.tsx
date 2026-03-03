@@ -6,6 +6,7 @@ const MAX_FILE_SIZE_MB = 3;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const MAX_FILES_PER_BATCH = 30;
 const MAX_CLIPBOARD_IMAGES = 10;
+const UPLOAD_CONCURRENCY = 5;
 const SESSION_KEY_FILES = 'manualInput_files';
 const SESSION_KEY_SUMMARY = 'manualInput_summary';
 
@@ -112,26 +113,20 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
         return;
       }
 
-      const newEntries: AttachedFile[] = files.map((f, i) => ({
+      const newEntries: AttachedFile[] = files.map((f) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name: f.name || `이미지_${Date.now()}`,
         size: f.size,
-        status: (i === 0 ? 'processing' : 'queued') as AttachedFile['status'],
+        status: 'queued' as AttachedFile['status'],
       }));
 
       setAttachedFiles((prev) => [...prev, ...newEntries]);
 
-      // Process each file individually for granular status
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const entry = newEntries[i];
-
-        if (i > 0) {
-          setAttachedFiles((prev) =>
-            prev.map((f) => (f.id === entry.id ? { ...f, status: 'processing' } : f))
-          );
-        }
-
+      // Process files with concurrency limit (UPLOAD_CONCURRENCY at a time)
+      const processOne = async (file: File, entry: AttachedFile) => {
+        setAttachedFiles((prev) =>
+          prev.map((f) => (f.id === entry.id ? { ...f, status: 'processing' } : f))
+        );
         try {
           const form = new FormData();
           form.append('type', file.type === 'application/pdf' ? 'pdf' : 'image');
@@ -163,6 +158,14 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
             )
           );
         }
+      };
+
+      // Run in chunks of UPLOAD_CONCURRENCY
+      const pairs = files.map((file, i) => ({ file, entry: newEntries[i] }));
+      for (let i = 0; i < pairs.length; i += UPLOAD_CONCURRENCY) {
+        await Promise.allSettled(
+          pairs.slice(i, i + UPLOAD_CONCURRENCY).map(({ file, entry }) => processOne(file, entry))
+        );
       }
     },
     [addSummary]

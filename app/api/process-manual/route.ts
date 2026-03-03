@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'No files provided' }, { status: 400 });
       }
 
-      // Extract text from each file in parallel
+      // Extract + summarize each file in a single API call (parallel)
       const extractions = await Promise.allSettled(
         files.map(async (file) => {
           const bytes = await file.arrayBuffer();
@@ -43,9 +43,9 @@ export async function POST(req: NextRequest) {
             ? 'application/pdf'
             : (file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp');
 
-          const visionMessage = await client.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 2048,
+          const msg = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
             messages: [
               {
                 role: 'user',
@@ -56,14 +56,14 @@ export async function POST(req: NextRequest) {
                   } as Anthropic.DocumentBlockParam | Anthropic.ImageBlockParam,
                   {
                     type: 'text',
-                    text: '이 문서/이미지에서 경제/금융/투자 관련 핵심 내용을 모두 추출해주세요. 수치, 기업명, 날짜를 포함하여 최대한 상세하게 텍스트로 변환해주세요.',
+                    text: '이 문서/이미지의 경제/금융/투자 관련 핵심 내용을 10~12줄로 요약해주세요. 수치, 기업명, 날짜, 시장 영향을 포함하세요.',
                   },
                 ],
               },
             ],
           });
 
-          return visionMessage.content[0].type === 'text' ? visionMessage.content[0].text : '';
+          return msg.content[0].type === 'text' ? msg.content[0].text : '';
         })
       );
 
@@ -79,29 +79,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
     }
 
-    const combinedText =
-      extractedTexts.length === 1
-        ? extractedTexts[0]
-        : extractedTexts
-            .map((t, i) => `[자료 ${i + 1}]\n${t}`)
-            .join('\n\n---\n\n');
+    // For text input or multi-file batches, do a final summarization pass
+    const needsSummary = extractedTexts.length > 1 || (extractedTexts.length === 1 && extractedTexts[0].length > 2000);
+    let summary: string;
 
-    // Summarize all extracted content together
-    const summaryMessage = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: `다음 경제/금융 자료를 10~12줄로 요약해주세요. 핵심 수치, 주요 기업, 시장 영향을 포함하세요:\n\n${combinedText}`,
-        },
-      ],
-    });
+    if (needsSummary) {
+      const combinedText = extractedTexts
+        .map((t, i) => (extractedTexts.length > 1 ? `[자료 ${i + 1}]\n${t}` : t))
+        .join('\n\n---\n\n');
+      const summaryMessage = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: `다음 경제/금융 자료를 10~12줄로 요약해주세요. 핵심 수치, 주요 기업, 시장 영향을 포함하세요:\n\n${combinedText}`,
+          },
+        ],
+      });
+      summary = summaryMessage.content[0].type === 'text' ? summaryMessage.content[0].text : '';
+    } else {
+      summary = extractedTexts[0] ?? '';
+    }
 
-    const summary =
-      summaryMessage.content[0].type === 'text' ? summaryMessage.content[0].text : '';
-
-    return NextResponse.json({ summary, rawText: combinedText });
+    return NextResponse.json({ summary });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
