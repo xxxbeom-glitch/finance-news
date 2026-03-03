@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Header from '@/components/Header';
 import BriefingDisplay from '@/components/BriefingDisplay';
 import { RSS_SOURCES } from '@/lib/rss-sources';
@@ -95,6 +95,19 @@ export default function HomePage() {
   const [hankyungSaved, setHankyungSaved] = useState<boolean | null>(null);
   const [hankyungCookie, setHankyungCookie] = useState('');
   const [showCookie, setShowCookie] = useState(false);
+
+  // localStorage에서 쿠키 불러오기 (최초 1회)
+  useEffect(() => {
+    const saved = localStorage.getItem('hankyung_cookie');
+    if (saved) setHankyungCookie(saved);
+  }, []);
+
+  // 쿠키 변경 시 자동 저장
+  const updateCookie = useCallback((value: string) => {
+    setHankyungCookie(value);
+    if (value) localStorage.setItem('hankyung_cookie', value);
+    else localStorage.removeItem('hankyung_cookie');
+  }, []);
 
   // ── 마켓 브리핑 생성 ──────────────────────────────
   const generateBriefing = useCallback(async () => {
@@ -477,7 +490,7 @@ export default function HomePage() {
                 <div style={{ height: '1px', background: 'var(--border)' }} />
                 <textarea
                   value={hankyungCookie}
-                  onChange={(e) => setHankyungCookie(e.target.value)}
+                  onChange={(e) => updateCookie(e.target.value)}
                   placeholder={`DevTools → Network → 요청 클릭 → Headers → Cookie 값 붙여넣기`}
                   rows={3}
                   className="w-full px-3 py-2 text-xs font-mono outline-none resize-none"
