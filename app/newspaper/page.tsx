@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import JSZip from 'jszip';
 import Header from '@/components/Header';
 
 // Highlight numbers, percentages, and monetary amounts in accent/green/red
@@ -270,12 +271,35 @@ export default function NewspaperPage() {
 
   const handleFiles = useCallback(
     async (selected: File[]) => {
-      const pdfs = selected.filter(
-        (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
-      );
-      if (pdfs.length === 0) return;
+      const allPdfs: File[] = [];
 
-      const newEntries: PdfFile[] = pdfs.map((f) => ({
+      for (const f of selected) {
+        const isZip =
+          f.name.toLowerCase().endsWith('.zip') ||
+          f.type === 'application/zip' ||
+          f.type === 'application/x-zip-compressed';
+
+        if (isZip) {
+          try {
+            const zip = await JSZip.loadAsync(f);
+            for (const [filename, entry] of Object.entries(zip.files)) {
+              if (!entry.dir && filename.toLowerCase().endsWith('.pdf')) {
+                const blob = await entry.async('blob');
+                const baseName = filename.split('/').pop() || filename;
+                allPdfs.push(new File([blob], baseName, { type: 'application/pdf' }));
+              }
+            }
+          } catch {
+            // skip invalid zip
+          }
+        } else if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) {
+          allPdfs.push(f);
+        }
+      }
+
+      if (allPdfs.length === 0) return;
+
+      const newEntries: PdfFile[] = allPdfs.map((f) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name: f.name,
         size: f.size,
@@ -283,7 +307,7 @@ export default function NewspaperPage() {
       }));
       setFiles((prev) => [...prev, ...newEntries]);
 
-      const pairs = pdfs.map((f, i) => ({ file: f, entry: newEntries[i] }));
+      const pairs = allPdfs.map((f, i) => ({ file: f, entry: newEntries[i] }));
       pairs.forEach(({ file, entry }) => fileObjectsRef.current.set(entry.id, file));
       for (let i = 0; i < pairs.length; i += UPLOAD_CONCURRENCY) {
         await Promise.allSettled(
@@ -547,12 +571,12 @@ export default function NewspaperPage() {
                   onClick={() => fileRef.current?.click()}
                   className="flex items-center gap-1.5 text-xs opacity-60 hover:opacity-100 transition-opacity"
                   style={{ color: 'var(--text-muted)' }}
-                  title="PDF 파일 직접 업로드"
+                  title="PDF 또는 ZIP 파일 업로드"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
                   </svg>
-                  PDF 업로드
+                  PDF / ZIP 업로드
                 </button>
                 {/* Dropbox */}
                 {dropboxReady && (
@@ -570,7 +594,7 @@ export default function NewspaperPage() {
                 )}
                 {files.length === 0 && (
                   <span className="text-xs opacity-30" style={{ color: 'var(--text-muted)' }}>
-                    PDF 드래그&드롭 가능
+                    PDF 또는 ZIP 드래그&드롭 가능
                   </span>
                 )}
                 {files.length > 0 && (
@@ -627,7 +651,7 @@ export default function NewspaperPage() {
             ref={fileRef}
             type="file"
             className="hidden"
-            accept=".pdf,application/pdf"
+            accept=".pdf,application/pdf,.zip,application/zip,application/x-zip-compressed"
             multiple
             onChange={(e) => {
               const selected = Array.from(e.target.files ?? []);
