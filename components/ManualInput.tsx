@@ -11,7 +11,7 @@ interface AttachedFile {
   id: string;
   name: string;
   size: number;
-  status: 'processing' | 'done' | 'error';
+  status: 'queued' | 'processing' | 'done' | 'error';
   error?: string;
 }
 
@@ -66,11 +66,11 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
         return;
       }
 
-      const newEntries: AttachedFile[] = files.map((f) => ({
+      const newEntries: AttachedFile[] = files.map((f, i) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name: f.name || `이미지_${Date.now()}`,
         size: f.size,
-        status: 'processing' as const,
+        status: (i === 0 ? 'processing' : 'queued') as const,
       }));
 
       setAttachedFiles((prev) => [...prev, ...newEntries]);
@@ -79,6 +79,12 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const entry = newEntries[i];
+
+        if (i > 0) {
+          setAttachedFiles((prev) =>
+            prev.map((f) => (f.id === entry.id ? { ...f, status: 'processing' } : f))
+          );
+        }
 
         try {
           const form = new FormData();
@@ -211,6 +217,25 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
       {/* File list */}
       {attachedFiles.length > 0 && (
         <div className="flex flex-wrap gap-2">
+          {(() => {
+            const done = attachedFiles.filter((f) => f.status === 'done').length;
+            const total = attachedFiles.length;
+            const hasActive = attachedFiles.some((f) => f.status === 'processing' || f.status === 'queued');
+            if (total > 1 && hasActive) {
+              return (
+                <div className="w-full flex items-center gap-2 text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
+                  <span style={{ color: 'var(--accent)' }}>{done}/{total}</span> 처리 완료
+                  <div className="flex-1 rounded-full h-1" style={{ background: 'var(--border)' }}>
+                    <div
+                      className="h-1 rounded-full transition-all duration-300"
+                      style={{ width: `${(done / total) * 100}%`, background: 'var(--accent)' }}
+                    />
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
           {attachedFiles.map((f) => (
             <div
               key={f.id}
@@ -222,8 +247,11 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
                     ? 'var(--green)'
                     : f.status === 'error'
                     ? 'var(--red)'
+                    : f.status === 'processing'
+                    ? 'var(--accent)'
                     : 'var(--border)'
                 }`,
+                opacity: f.status === 'queued' ? 0.45 : 1,
               }}
             >
               <span
@@ -233,10 +261,12 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
                       ? 'var(--green)'
                       : f.status === 'error'
                       ? 'var(--red)'
-                      : 'var(--accent)',
+                      : f.status === 'processing'
+                      ? 'var(--accent)'
+                      : 'var(--text-muted)',
                 }}
               >
-                {f.status === 'processing' ? '처리중' : f.status === 'done' ? '완료' : '실패'}
+                {f.status === 'processing' ? '처리중' : f.status === 'done' ? '완료' : f.status === 'queued' ? '대기' : '실패'}
               </span>
               <span style={{ color: 'var(--text-muted)' }} className="max-w-[120px] truncate">
                 {f.name}
