@@ -6,6 +6,8 @@ import { AIProviderSelector } from '@/components/AIProviderSelector';
 import type { AIProvider } from '@/lib/ai-providers';
 
 const UPLOAD_CONCURRENCY = 4;
+const SESSION_KEY_FILES = 'newspaper_files';
+const SESSION_KEY_RESULT = 'newspaper_result';
 
 declare global {
   interface Window {
@@ -49,6 +51,39 @@ export default function NewspaperPage() {
   const [copied, setCopied] = useState(false);
   const [provider, setProvider] = useState<AIProvider>('claude');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Restore state from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const savedFiles = sessionStorage.getItem(SESSION_KEY_FILES);
+      if (savedFiles) {
+        const parsed: PdfFile[] = JSON.parse(savedFiles);
+        const restored = parsed.map((f) =>
+          f.status === 'processing' || f.status === 'queued'
+            ? { ...f, status: 'error' as const, error: '업로드 중단됨' }
+            : f
+        );
+        setFiles(restored);
+      }
+      const savedResult = sessionStorage.getItem(SESSION_KEY_RESULT);
+      if (savedResult) setResult(savedResult);
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist files whenever they change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_KEY_FILES, JSON.stringify(files));
+    } catch {}
+  }, [files]);
+
+  // Persist result whenever it changes
+  useEffect(() => {
+    try {
+      if (result) sessionStorage.setItem(SESSION_KEY_RESULT, result);
+    } catch {}
+  }, [result]);
 
   const today = new Date()
     .toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -187,6 +222,10 @@ export default function NewspaperPage() {
     setFiles([]);
     setResult('');
     setGenError('');
+    try {
+      sessionStorage.removeItem(SESSION_KEY_FILES);
+      sessionStorage.removeItem(SESSION_KEY_RESULT);
+    } catch {}
   }, []);
 
   const generateSummary = useCallback(async () => {

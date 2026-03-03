@@ -8,7 +8,7 @@ export type AIProvider = 'claude' | 'openai' | 'gemini';
 export const MAIN_MODELS: Record<AIProvider, string> = {
   claude: 'claude-sonnet-4-20250514',
   openai: 'gpt-4o',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-1.5-flash',
 };
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
