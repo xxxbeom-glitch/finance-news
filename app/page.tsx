@@ -173,11 +173,14 @@ export default function HomePage() {
       if (!fetchRes.ok) throw new Error('기사 수집 실패');
       const { articles } = await fetchRes.json();
 
-      const success = (
-        articles as { title: string; content: string; error?: string }[]
-      ).filter((a) => !a.error && a.content.length > 50);
+      const allArticles = articles as { url: string; title: string; content: string; error?: string }[];
+      const success = allArticles.filter((a) => !a.error && a.content.length > 50);
+      const failed = allArticles.filter((a) => a.error || a.content.length <= 50);
 
-      if (!success.length) throw new Error('수집된 기사 본문이 없습니다');
+      if (!success.length) {
+        const firstErr = failed[0]?.error || '본문 없음';
+        throw new Error(`기사 수집 실패 (${failed.length}개): ${firstErr}`);
+      }
 
       setHankyungStep(`${success.length}개 기사 AI 요약 중...`);
 
@@ -206,15 +209,49 @@ export default function HomePage() {
     }
   }, [urlInput, hankyungDate]);
 
+  // URL textarea 스마트 붙여넣기: 각 URL을 독립 줄로 자동 분리
+  const handleUrlPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').trim();
+    if (!pasted) return;
+
+    // 공백·쉼표·줄바꿈으로 분리하여 URL 배열로 만들기
+    const pastedUrls = pasted.split(/[\n\r\s,]+/).map((s) => s.trim()).filter(Boolean);
+    const insertText = pastedUrls.join('\n');
+
+    const el = e.currentTarget;
+    const { selectionStart: start, selectionEnd: end, value } = el;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+
+    const needsBefore = before.length > 0 && !before.endsWith('\n');
+    const needsAfter = after.length > 0 && !after.startsWith('\n');
+
+    const newValue =
+      before +
+      (needsBefore ? '\n' : '') +
+      insertText +
+      (needsAfter ? '\n' : '') +
+      after;
+
+    setUrlInput(newValue);
+
+    const newPos = before.length + (needsBefore ? 1 : 0) + insertText.length;
+    requestAnimationFrame(() => {
+      el.setSelectionRange(newPos, newPos);
+    });
+  }, []);
+
   const urlCount = urlInput.split('\n').map((s) => s.trim()).filter(Boolean).length;
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
       <Header />
 
-      <div className="flex-1 overflow-hidden flex" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-hidden flex justify-center" style={{ minHeight: 0 }}>
+        <div className="w-full max-w-[960px] flex min-h-0">
         {/* ── 왼쪽: 마켓 브리핑 ─────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-4 min-w-0">
+        <div className="overflow-y-auto px-5 py-5 flex flex-col gap-4 min-w-0" style={{ flex: 7 }}>
           <div className="space-y-0.5">
             <h2 className="text-base font-bold tracking-tight" style={{ color: 'var(--accent)' }}>
               미국 및 세계 경제
@@ -319,7 +356,7 @@ export default function HomePage() {
         <div className="w-px shrink-0 self-stretch" style={{ background: 'var(--border)' }} />
 
         {/* ── 오른쪽: 한국경제 ──────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-4 min-w-0">
+        <div className="overflow-y-auto px-5 py-5 flex flex-col gap-4 min-w-0" style={{ flex: 3 }}>
           <div className="space-y-0.5">
             <h2 className="text-base font-bold tracking-tight" style={{ color: 'var(--accent)' }}>
               한국경제
@@ -401,6 +438,7 @@ export default function HomePage() {
             <textarea
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
+              onPaste={handleUrlPaste}
               placeholder={`https://www.hankyung.com/article/...\nhttps://www.hankyung.com/article/...\n한 줄에 URL 하나씩 붙여넣기`}
               rows={6}
               className="w-full px-3 py-2.5 text-xs font-mono outline-none resize-none"
@@ -446,6 +484,7 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+        </div>{/* max-w-[960px] wrapper */}
       </div>
     </div>
   );
