@@ -17,6 +17,7 @@ declare global {
         multiselect?: boolean;
         extensions?: string[];
       }) => void;
+      isBrowserSupported?: () => boolean;
     };
   }
 }
