@@ -1,7 +1,100 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Header from '@/components/Header';
+
+// Highlight numbers, percentages, and monetary amounts in accent/green/red
+function highlightNumbers(text: string): React.ReactNode {
+  const pattern = /([+-]?\d[\d,]*(?:\.\d+)?(?:%|억|조|만원|만|bp|달러|원|위안)?)/g;
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    const val = match[1];
+    const color = val.startsWith('+') ? 'var(--green)' : val.startsWith('-') ? 'var(--red)' : 'var(--accent)';
+    parts.push(<span key={match.index} style={{ color, fontWeight: '600' }}>{val}</span>);
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length > 1 ? <>{parts}</> : text;
+}
+
+function renderNewspaper(text: string) {
+  const lines = text.split('\n');
+  return lines.map((line, i) => {
+    const trimmed = line.trim();
+
+    // Long divider
+    if (/^-{10,}$/.test(trimmed)) {
+      return (
+        <div key={i} style={{ margin: '20px 0' }}>
+          <div style={{ height: '1px', background: 'var(--border)', opacity: 0.5 }} />
+        </div>
+      );
+    }
+
+    // Article title: **제목** or **제목 (unclosed)
+    const boldMatch = trimmed.match(/^\*\*(.+?)\*\*$/) ?? trimmed.match(/^\*\*(.+)$/);
+    if (boldMatch) {
+      return (
+        <div
+          key={i}
+          style={{
+            fontWeight: '700',
+            fontSize: '0.82rem',
+            color: 'var(--text)',
+            marginTop: '4px',
+            marginBottom: '8px',
+            lineHeight: '1.55',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {boldMatch[1]}
+        </div>
+      );
+    }
+
+    // Bullet items
+    if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+      const content = trimmed.slice(2);
+      return (
+        <div
+          key={i}
+          style={{
+            display: 'flex',
+            gap: '8px',
+            marginBottom: '7px',
+            paddingLeft: '8px',
+            lineHeight: '1.65',
+          }}
+        >
+          <span style={{ color: 'var(--accent)', flexShrink: 0 }}>–</span>
+          <span style={{ color: 'var(--text)' }}>{highlightNumbers(content)}</span>
+        </div>
+      );
+    }
+
+    // Empty line
+    if (trimmed === '') return <div key={i} style={{ height: '6px' }} />;
+
+    // Default (date header / plain text)
+    const isHeader = i === 0 || trimmed.includes('한국경제 요약');
+    return (
+      <div
+        key={i}
+        style={{
+          marginBottom: '6px',
+          fontWeight: isHeader ? '700' : '400',
+          fontSize: isHeader ? '0.85rem' : '0.75rem',
+          color: isHeader ? 'var(--accent)' : 'var(--text-muted)',
+        }}
+      >
+        {line}
+      </div>
+    );
+  });
+}
 
 const UPLOAD_CONCURRENCY = 4;
 const SESSION_KEY_FILES = 'newspaper_files';
@@ -296,27 +389,38 @@ export default function NewspaperPage() {
           {/* Result display */}
           {result && (
             <div
-              className="rounded-lg border p-5"
+              className="rounded-lg border scanline"
               style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
             >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-bold tracking-wider uppercase" style={{ color: 'var(--accent)' }}>
-                  요약 결과
-                </span>
+              {/* Toolbar */}
+              <div
+                className="flex items-center justify-between px-4 py-2 border-b"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1.5">
+                    <div className="w-3 h-3 rounded-full" style={{ background: '#ff5f57' }} />
+                    <div className="w-3 h-3 rounded-full" style={{ background: '#febc2e' }} />
+                    <div className="w-3 h-3 rounded-full" style={{ background: '#28c840' }} />
+                  </div>
+                  <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                    hankyung_{today}.md
+                  </span>
+                </div>
                 <button
                   onClick={copyResult}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs transition-all hover:opacity-80"
-                  style={{ background: 'var(--surface2)', color: copied ? 'var(--green)' : 'var(--text-muted)', border: '1px solid var(--border)' }}
+                  className="text-xs px-2 py-1 rounded transition-all hover:opacity-80"
+                  style={{ background: 'var(--surface2)', color: copied ? 'var(--green)' : 'var(--text-muted)' }}
                 >
                   {copied ? '복사됨' : '복사'}
                 </button>
               </div>
-              <pre
-                className="text-xs leading-relaxed whitespace-pre-wrap font-mono"
-                style={{ color: 'var(--text)' }}
-              >
-                {result}
-              </pre>
+              {/* Content */}
+              <div className="p-5 overflow-auto" style={{ maxHeight: '70vh' }}>
+                <div className="text-xs leading-relaxed" style={{ color: 'var(--text)' }}>
+                  {renderNewspaper(result)}
+                </div>
+              </div>
             </div>
           )}
 
