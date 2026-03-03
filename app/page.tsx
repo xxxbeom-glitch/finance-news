@@ -93,6 +93,8 @@ export default function HomePage() {
   const [hankyungResult, setHankyungResult] = useState('');
   const [hankyungError, setHankyungError] = useState('');
   const [hankyungSaved, setHankyungSaved] = useState<boolean | null>(null);
+  const [hankyungCookie, setHankyungCookie] = useState('');
+  const [showCookie, setShowCookie] = useState(false);
 
   // ── 마켓 브리핑 생성 ──────────────────────────────
   const generateBriefing = useCallback(async () => {
@@ -168,7 +170,7 @@ export default function HomePage() {
       const fetchRes = await fetch('/api/fetch-articles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls }),
+        body: JSON.stringify({ urls, cookie: hankyungCookie || undefined }),
       });
       if (!fetchRes.ok) throw new Error('기사 수집 실패');
       const { articles } = await fetchRes.json();
@@ -448,6 +450,41 @@ export default function HomePage() {
                 lineHeight: '1.7',
               }}
             />
+          </div>
+
+          {/* 쿠키 입력 (유료기사용, 토글) */}
+          <div
+            className="rounded-lg border overflow-hidden"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowCookie((v) => !v)}
+              className="w-full px-3 py-2 flex items-center gap-2 text-left"
+            >
+              <span className="text-xs font-bold tracking-wider uppercase" style={{ color: 'var(--text-muted)' }}>
+                쿠키
+              </span>
+              {hankyungCookie && (
+                <span className="text-xs" style={{ color: 'var(--green)' }}>설정됨</span>
+              )}
+              <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
+                {showCookie ? '▲' : '▼'} 유료기사 접근
+              </span>
+            </button>
+            {showCookie && (
+              <>
+                <div style={{ height: '1px', background: 'var(--border)' }} />
+                <textarea
+                  value={hankyungCookie}
+                  onChange={(e) => setHankyungCookie(e.target.value)}
+                  placeholder={`DevTools → Network → 요청 클릭 → Headers → Cookie 값 붙여넣기`}
+                  rows={3}
+                  className="w-full px-3 py-2 text-xs font-mono outline-none resize-none"
+                  style={{ background: 'transparent', color: 'var(--text)', lineHeight: '1.6' }}
+                />
+              </>
+            )}
           </div>
 
           {/* 날짜 + 버튼 */}

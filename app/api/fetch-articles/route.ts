@@ -36,15 +36,21 @@ const BROWSER_HEADERS = {
   'Upgrade-Insecure-Requests': '1',
 };
 
-async function fetchArticle(url: string): Promise<{
+async function fetchArticle(url: string, cookie?: string): Promise<{
   url: string;
   title: string;
   content: string;
   error?: string;
 }> {
   try {
+    const headers: Record<string, string> = {
+      ...BROWSER_HEADERS,
+      Referer: new URL(url).origin + '/',
+    };
+    if (cookie) headers['Cookie'] = cookie;
+
     const res = await fetch(url, {
-      headers: BROWSER_HEADERS,
+      headers,
       redirect: 'follow',
       signal: AbortSignal.timeout(12000),
     });
@@ -111,7 +117,7 @@ async function fetchArticle(url: string): Promise<{
 
 export async function POST(req: NextRequest) {
   try {
-    const { urls } = (await req.json()) as { urls: string[] };
+    const { urls, cookie } = (await req.json()) as { urls: string[]; cookie?: string };
 
     if (!urls?.length) {
       return NextResponse.json({ error: 'URL이 없습니다' }, { status: 400 });
@@ -120,7 +126,7 @@ export async function POST(req: NextRequest) {
     const results: Awaited<ReturnType<typeof fetchArticle>>[] = [];
     for (let i = 0; i < urls.length; i += CONCURRENCY) {
       const batch = urls.slice(i, i + CONCURRENCY);
-      results.push(...(await Promise.all(batch.map(fetchArticle))));
+      results.push(...(await Promise.all(batch.map((u) => fetchArticle(u, cookie)))));
     }
 
     return NextResponse.json({ articles: results });
