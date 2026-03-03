@@ -13,20 +13,14 @@ export const RSS_SOURCES: RssSource[] = [
     category: 'us-market',
   },
   {
-    name: 'Reuters Business',
-    url: 'https://feeds.reuters.com/reuters/businessNews',
-    lang: 'en',
-    category: 'global',
-  },
-  {
     name: 'MarketWatch',
     url: 'https://feeds.marketwatch.com/marketwatch/topstories',
     lang: 'en',
     category: 'us-market',
   },
   {
-    name: 'Bloomberg Markets',
-    url: 'https://feeds.bloomberg.com/markets/news.rss',
+    name: 'AP Business',
+    url: 'https://feeds.apnews.com/rss/business',
     lang: 'en',
     category: 'global',
   },

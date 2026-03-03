@@ -3,11 +3,10 @@
 import { useState, useCallback } from 'react';
 import Header from '@/components/Header';
 import BriefingDisplay from '@/components/BriefingDisplay';
-import { AIProviderSelector } from '@/components/AIProviderSelector';
 import { RSS_SOURCES } from '@/lib/rss-sources';
-import type { AIProvider } from '@/lib/ai-providers';
 
-const ALL_RSS_SOURCE_NAMES = RSS_SOURCES.map((s) => s.name);
+const FOREIGN_SOURCES = RSS_SOURCES.filter((s) => s.lang === 'en');
+const FOREIGN_SOURCE_NAMES = FOREIGN_SOURCES.map((s) => s.name);
 
 export default function HomePage() {
   const [briefing, setBriefing] = useState('');
@@ -16,10 +15,9 @@ export default function HomePage() {
   const [rssCount, setRssCount] = useState<number | null>(null);
   const [step, setStep] = useState('');
   const [selectedSources, setSelectedSources] = useState<Set<string>>(
-    new Set(ALL_RSS_SOURCE_NAMES)
+    new Set(FOREIGN_SOURCE_NAMES)
   );
   const [useYahooFinance, setUseYahooFinance] = useState(true);
-  const [provider, setProvider] = useState<AIProvider>('claude');
 
   const today = new Date()
     .toLocaleDateString('ko-KR', {
@@ -49,7 +47,6 @@ export default function HomePage() {
     setRssCount(null);
 
     try {
-      // When no sources are selected, skip RSS fetch entirely
       const rssPromise =
         selectedSources.size > 0
           ? fetch(`/api/fetch-rss?sources=${encodeURIComponent([...selectedSources].join(','))}`)
@@ -75,7 +72,7 @@ export default function HomePage() {
           newsItems: items,
           date: today,
           marketData: marketData || undefined,
-          provider,
+          provider: 'claude',
         }),
       });
 
@@ -92,7 +89,7 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [today, selectedSources, useYahooFinance, provider]);
+  }, [today, selectedSources, useYahooFinance]);
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
@@ -103,7 +100,7 @@ export default function HomePage() {
           {/* Hero */}
           <div className="space-y-1">
             <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--accent)' }}>
-              마켓 브리핑
+              미국 및 세계 경제
             </h1>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               RSS 자동 수집 → Yahoo Finance 시장 데이터 → Claude AI 분석 → 날짜별 아카이빙
@@ -159,7 +156,7 @@ export default function HomePage() {
               )}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {ALL_RSS_SOURCE_NAMES.map((name) => (
+              {FOREIGN_SOURCE_NAMES.map((name) => (
                 <label key={name} className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -190,9 +187,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Generate button + AI selector */}
-          <div className="flex justify-end items-center gap-3 flex-wrap">
-            <AIProviderSelector value={provider} onChange={setProvider} />
+          {/* Generate button */}
+          <div className="flex justify-end items-center gap-3">
             <button
               onClick={generateBriefing}
               disabled={loading}
