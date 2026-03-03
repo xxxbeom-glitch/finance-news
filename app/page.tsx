@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react';
 import Header from '@/components/Header';
-import ManualInput from '@/components/ManualInput';
 import BriefingDisplay from '@/components/BriefingDisplay';
 import { RSS_SOURCES } from '@/lib/rss-sources';
 
@@ -12,7 +11,6 @@ export default function HomePage() {
   const [briefing, setBriefing] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [manualSummary, setManualSummary] = useState('');
   const [rssCount, setRssCount] = useState<number | null>(null);
   const [step, setStep] = useState('');
   const [selectedSources, setSelectedSources] = useState<Set<string>>(
@@ -48,16 +46,15 @@ export default function HomePage() {
     setRssCount(null);
 
     try {
-      setStep('뉴스 수집 중...');
-      const sourcesParam =
-        selectedSources.size > 0 ? [...selectedSources].join(',') : '';
+      // When no sources are selected, skip RSS fetch entirely
+      const rssPromise =
+        selectedSources.size > 0
+          ? fetch(`/api/fetch-rss?sources=${encodeURIComponent([...selectedSources].join(','))}`)
+          : Promise.resolve(new Response(JSON.stringify({ items: [], count: 0 }), { status: 200 }));
 
+      setStep('뉴스 수집 중...');
       const [rssRes, marketRes] = await Promise.all([
-        fetch(
-          sourcesParam
-            ? `/api/fetch-rss?sources=${encodeURIComponent(sourcesParam)}`
-            : '/api/fetch-rss'
-        ),
+        rssPromise,
         useYahooFinance ? fetch('/api/market-data') : Promise.resolve(null),
       ]);
 
@@ -73,7 +70,6 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newsItems: items,
-          manualContent: manualSummary || undefined,
           date: today,
           marketData: marketData || undefined,
         }),
@@ -92,133 +88,110 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [manualSummary, today, selectedSources, useYahooFinance]);
+  }, [today, selectedSources, useYahooFinance]);
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
       <Header />
 
       <div className="flex-1 overflow-y-auto">
-      <main className="max-w-5xl mx-auto px-4 py-6 flex flex-col gap-5">
-        {/* Hero */}
-        <div className="space-y-1">
-          <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--accent)' }}>
-            경제 뉴스 자동 브리핑
-          </h1>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            RSS 자동 수집 → Yahoo Finance 시장 데이터 → Claude AI 분석 → 날짜별 아카이빙
-          </p>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div
-            className="rounded border px-4 py-3 text-xs"
-            style={{
-              borderColor: 'var(--red)',
-              background: 'rgba(239,68,68,0.1)',
-              color: 'var(--red)',
-            }}
-          >
-            ✕ 오류: {error}
+        <main className="max-w-5xl mx-auto px-4 py-6 flex flex-col gap-5">
+          {/* Hero */}
+          <div className="space-y-1">
+            <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--accent)' }}>
+              마켓 브리핑
+            </h1>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              RSS 자동 수집 → Yahoo Finance 시장 데이터 → Claude AI 분석 → 날짜별 아카이빙
+            </p>
           </div>
-        )}
 
-        {/* Briefing display — full width */}
-        <div>
-          <BriefingDisplay briefing={briefing} date={today} loading={loading} />
-
-          {!briefing && !loading && (
+          {/* Error */}
+          {error && (
             <div
-              className="rounded-lg border p-12 text-center scanline"
-              style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+              className="rounded border px-4 py-3 text-xs"
+              style={{
+                borderColor: 'var(--red)',
+                background: 'rgba(239,68,68,0.1)',
+                color: 'var(--red)',
+              }}
             >
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                아래 소스를 선택하고 브리핑 생성 버튼을 누르세요
-              </p>
-              <p className="text-xs mt-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>
-                약 20~40초 소요
-              </p>
+              ✕ 오류: {error}
             </div>
           )}
-        </div>
 
-        {/* Source selection */}
-        <div
-          className="rounded-lg border px-4 py-3"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs font-bold tracking-wider uppercase" style={{ color: 'var(--text-muted)' }}>
-              뉴스 소스
-            </span>
-            {rssCount !== null && (
-              <span className="text-xs ml-auto" style={{ color: 'var(--accent)' }}>
-                {rssCount}개 기사 수집됨
-              </span>
+          {/* Briefing display */}
+          <div>
+            <BriefingDisplay briefing={briefing} date={today} loading={loading} />
+
+            {!briefing && !loading && (
+              <div
+                className="rounded-lg border p-12 text-center scanline"
+                style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+              >
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  아래 소스를 선택하고 브리핑 생성 버튼을 누르세요
+                </p>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>
+                  약 20~40초 소요
+                </p>
+              </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {ALL_RSS_SOURCE_NAMES.map((name) => (
-              <label key={name} className="flex items-center gap-1.5 cursor-pointer select-none">
+
+          {/* Source selection */}
+          <div
+            className="rounded-lg border px-4 py-3"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-bold tracking-wider uppercase" style={{ color: 'var(--text-muted)' }}>
+                뉴스 소스
+              </span>
+              {rssCount !== null && (
+                <span className="text-xs ml-auto" style={{ color: 'var(--accent)' }}>
+                  {rssCount}개 기사 수집됨
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {ALL_RSS_SOURCE_NAMES.map((name) => (
+                <label key={name} className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectedSources.has(name)}
+                    onChange={() => toggleSource(name)}
+                    className="accent-[var(--accent)] w-3 h-3"
+                  />
+                  <span className="text-xs" style={{ color: selectedSources.has(name) ? 'var(--text)' : 'var(--text-muted)' }}>
+                    {name}
+                  </span>
+                </label>
+              ))}
+              {/* Yahoo Finance toggle */}
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
-                  checked={selectedSources.has(name)}
-                  onChange={() => toggleSource(name)}
+                  checked={useYahooFinance}
+                  onChange={() => setUseYahooFinance((v) => !v)}
                   className="accent-[var(--accent)] w-3 h-3"
                 />
-                <span className="text-xs" style={{ color: selectedSources.has(name) ? 'var(--text)' : 'var(--text-muted)' }}>
-                  {name}
+                <span className="text-xs" style={{ color: useYahooFinance ? 'var(--text)' : 'var(--text-muted)' }}>
+                  Yahoo Finance
+                </span>
+                <span className="text-xs opacity-50" style={{ color: 'var(--text-muted)' }}>
+                  (시장 지수)
                 </span>
               </label>
-            ))}
-            {/* Yahoo Finance toggle */}
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={useYahooFinance}
-                onChange={() => setUseYahooFinance((v) => !v)}
-                className="accent-[var(--accent)] w-3 h-3"
-              />
-              <span className="text-xs" style={{ color: useYahooFinance ? 'var(--text)' : 'var(--text-muted)' }}>
-                Yahoo Finance
-              </span>
-              <span className="text-xs opacity-50" style={{ color: 'var(--text-muted)' }}>
-                (시장 지수)
-              </span>
-            </label>
-            {/* Manual input indicator */}
-            {manualSummary && (
-              <span
-                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded"
-                style={{ background: 'rgba(0,212,170,0.12)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
-              >
-                수동 자료 첨부됨
-                <button
-                  onClick={() => {
-                    setManualSummary('');
-                  }}
-                  className="opacity-60 hover:opacity-100 ml-0.5"
-                >
-                  ✕
-                </button>
-              </span>
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Bottom: input area + generate button */}
-        <div className="flex gap-3 items-end">
-          <ManualInput
-            onSummaryReady={setManualSummary}
-            onSummaryClear={() => setManualSummary('')}
-          />
-
-          <div className="flex flex-col items-end gap-1 shrink-0">
+          {/* Generate button */}
+          <div className="flex justify-end items-center gap-2">
             <button
               onClick={generateBriefing}
               disabled={loading}
-              className="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-sm tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 whitespace-nowrap"
+              className="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-sm tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
               style={{ background: 'var(--accent)', color: '#000' }}
             >
               {loading ? (
@@ -237,8 +210,7 @@ export default function HomePage() {
               {today} 기준
             </span>
           </div>
-        </div>
-      </main>
+        </main>
       </div>
     </div>
   );

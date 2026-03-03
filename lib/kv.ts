@@ -22,12 +22,21 @@ export interface BriefingRecord {
   hasManualInput: boolean;
 }
 
+export interface NewspaperRecord {
+  id: string;        // ISO timestamp — unique key
+  date: string;      // KST date string e.g. "2026-03-03"
+  createdAt: string; // ISO timestamp
+  content: string;   // Formatted newspaper summary
+  fileCount: number; // Number of PDFs processed
+}
+
+// ── Market Briefing ────────────────────────────────────────────
+
 /** Save a briefing. Uses createdAt as the unique ID. */
 export async function saveBriefing(data: BriefingRecord): Promise<void> {
   const kv = getRedis();
   const id = data.id;
   await kv.set(`briefing:${id}`, JSON.stringify(data));
-  // sorted set: score = unix ms, member = id
   await kv.zadd('briefing:index', { score: new Date(id).getTime(), member: id });
 }
 
@@ -50,5 +59,37 @@ export async function deleteBriefing(id: string): Promise<void> {
 export async function listBriefingIds(limit = 60): Promise<string[]> {
   const kv = getRedis();
   const ids = await kv.zrange('briefing:index', 0, limit - 1, { rev: true });
+  return ids as string[];
+}
+
+// ── Newspaper ──────────────────────────────────────────────────
+
+/** Save a newspaper summary. */
+export async function saveNewspaper(data: NewspaperRecord): Promise<void> {
+  const kv = getRedis();
+  const id = data.id;
+  await kv.set(`newspaper:${id}`, JSON.stringify(data));
+  await kv.zadd('newspaper:index', { score: new Date(id).getTime(), member: id });
+}
+
+/** Fetch a single newspaper record by its id. */
+export async function getNewspaperById(id: string): Promise<NewspaperRecord | null> {
+  const kv = getRedis();
+  const raw = await kv.get<string>(`newspaper:${id}`);
+  if (!raw) return null;
+  return typeof raw === 'string' ? JSON.parse(raw) : (raw as NewspaperRecord);
+}
+
+/** Delete a newspaper record by id. */
+export async function deleteNewspaper(id: string): Promise<void> {
+  const kv = getRedis();
+  await kv.del(`newspaper:${id}`);
+  await kv.zrem('newspaper:index', id);
+}
+
+/** List newspaper IDs (ISO timestamps), newest first. */
+export async function listNewspaperIds(limit = 60): Promise<string[]> {
+  const kv = getRedis();
+  const ids = await kv.zrange('newspaper:index', 0, limit - 1, { rev: true });
   return ids as string[];
 }
