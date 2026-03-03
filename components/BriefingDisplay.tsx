@@ -52,6 +52,39 @@ function renderCitationLine(line: string, key: number) {
   );
 }
 
+/**
+ * Parse numbered list content for company+ticker format:
+ * "{기업명} ({티커}) / ±N.XX% : {설명}"
+ * Renders name+ticker in bold with accent/green/red color.
+ */
+function renderCompanyLine(content: string): React.ReactNode {
+  // Match: {기업명} ({티커}) / {±등락률}% : {설명}
+  const m = content.match(
+    /^(.*?)\s*\(([A-Z0-9^.=\-]{1,10})\)\s*(\/\s*[+-]?[\d.]+%\s*:)(.*)/
+  );
+  if (!m) return content;
+
+  const companyName = m[1].trim();
+  const ticker = m[2];
+  const rateAndColon = m[3]; // e.g. "/ +5.2% :"
+  const description = m[4];
+
+  const isPositive = rateAndColon.includes('+');
+  const isNegative = rateAndColon.includes('-');
+  const rateColor = isPositive ? 'var(--green)' : isNegative ? 'var(--red)' : 'var(--text-muted)';
+
+  return (
+    <>
+      <span style={{ fontWeight: '700', color: 'var(--text)' }}>{companyName}</span>
+      {' '}
+      <span style={{ fontWeight: '700', color: 'var(--accent)' }}>({ticker})</span>
+      {' '}
+      <span style={{ color: rateColor, fontWeight: '600' }}>{rateAndColon.trim()}</span>
+      <span>{description}</span>
+    </>
+  );
+}
+
 function renderBriefing(text: string) {
   const lines = text.split('\n');
   return lines.map((line, i) => {
@@ -62,7 +95,7 @@ function renderBriefing(text: string) {
       );
     }
 
-    // Section header (## prefix)
+    // Section header (## prefix) — 2pt larger: 0.8rem → 0.95rem
     if (line.startsWith('## ')) {
       const content = line.slice(3);
       return (
@@ -70,7 +103,7 @@ function renderBriefing(text: string) {
           key={i}
           style={{
             fontWeight: '700',
-            fontSize: '0.8rem',
+            fontSize: '0.95rem',
             letterSpacing: '0.05em',
             marginTop: i === 0 ? 0 : '14px',
             marginBottom: '6px',
@@ -94,7 +127,7 @@ function renderBriefing(text: string) {
         return (
           <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '4px', paddingLeft: '4px' }}>
             <span style={{ color: 'var(--accent)', flexShrink: 0, minWidth: '16px' }}>{match[1]}.</span>
-            <span>{match[2]}</span>
+            <span>{renderCompanyLine(match[2])}</span>
           </div>
         );
       }

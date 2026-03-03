@@ -95,9 +95,10 @@ export default function HomePage() {
   }, [manualSummary, today, selectedSources, useYahooFinance]);
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+    <div className="h-dvh flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
       <Header />
 
+      <div className="flex-1 overflow-y-auto">
       <main className="max-w-5xl mx-auto px-4 py-6 flex flex-col gap-5">
         {/* Hero */}
         <div className="space-y-1">
@@ -238,6 +239,7 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+      </div>
     </div>
   );
 }

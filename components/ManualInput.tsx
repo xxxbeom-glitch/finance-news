@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 const MAX_FILE_SIZE_MB = 3;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const MAX_FILES_PER_BATCH = 30;
 const MAX_CLIPBOARD_IMAGES = 10;
+const SESSION_KEY_FILES = 'manualInput_files';
+const SESSION_KEY_SUMMARY = 'manualInput_summary';
 
 interface AttachedFile {
   id: string;
@@ -28,10 +30,50 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
   const fileRef = useRef<HTMLInputElement>(null);
   const accumulatedSummary = useRef<string[]>([]);
 
+  // Restore state from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const savedFiles = sessionStorage.getItem(SESSION_KEY_FILES);
+      if (savedFiles) {
+        const files: AttachedFile[] = JSON.parse(savedFiles);
+        // Files that were mid-upload can't be resumed — mark as interrupted
+        const restored = files.map((f) =>
+          f.status === 'processing' || f.status === 'queued'
+            ? { ...f, status: 'error' as const, error: '업로드 중단됨' }
+            : f
+        );
+        setAttachedFiles(restored);
+      }
+
+      const savedSummary = sessionStorage.getItem(SESSION_KEY_SUMMARY);
+      if (savedSummary) {
+        const summaries: string[] = JSON.parse(savedSummary);
+        accumulatedSummary.current = summaries;
+        if (summaries.length > 0) {
+          onSummaryReady(summaries.join('\n\n---\n\n'));
+        }
+      }
+    } catch {
+      // sessionStorage unavailable or corrupt — start fresh
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist attachedFiles whenever they change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_KEY_FILES, JSON.stringify(attachedFiles));
+    } catch {}
+  }, [attachedFiles]);
+
   const addSummary = useCallback(
     (summary: string) => {
       accumulatedSummary.current.push(summary);
-      onSummaryReady(accumulatedSummary.current.join('\n\n---\n\n'));
+      const joined = accumulatedSummary.current.join('\n\n---\n\n');
+      try {
+        sessionStorage.setItem(SESSION_KEY_SUMMARY, JSON.stringify(accumulatedSummary.current));
+      } catch {}
+      onSummaryReady(joined);
     },
     [onSummaryReady]
   );
@@ -42,6 +84,10 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
         const next = prev.filter((f) => f.id !== id);
         if (next.length === 0 && text.trim() === '') {
           accumulatedSummary.current = [];
+          try {
+            sessionStorage.removeItem(SESSION_KEY_FILES);
+            sessionStorage.removeItem(SESSION_KEY_SUMMARY);
+          } catch {}
           onSummaryClear();
         }
         return next;
@@ -222,6 +268,7 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
             const total = attachedFiles.length;
             const hasActive = attachedFiles.some((f) => f.status === 'processing' || f.status === 'queued');
             if (total > 1 && hasActive) {
+              const pct = Math.round((done / total) * 100);
               return (
                 <div className="w-full flex items-center gap-2 text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
                   <span style={{ color: 'var(--accent)' }}>{done}/{total}</span> 처리 완료
@@ -231,6 +278,9 @@ export default function ManualInput({ onSummaryReady, onSummaryClear }: ManualIn
                       style={{ width: `${(done / total) * 100}%`, background: 'var(--accent)' }}
                     />
                   </div>
+                  <span style={{ color: 'var(--accent)', fontWeight: '600', minWidth: '32px', textAlign: 'right' }}>
+                    {pct}%
+                  </span>
                 </div>
               );
             }
